@@ -1,0 +1,27 @@
+name: Build samples
+
+on:
+  push:
+    branches:
+    - 'master'
+    tags:
+    - 'v*'
+  pull_request:
+    branches:
+    - '*'
+
+jobs:
+  samples:
+    name: samples (ubuntu-20.04)
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - name: Configure capnproto
+        run: cmake -DCMAKE_INSTALL_PREFIX=build/install -Bbuild -S.
+      - name: Build and install capnproto
+        run: cmake --build build --target install
+      - name: Configure samples
+        run: cmake -DCMAKE_PREFIX_PATH=build/install -Bc++/samples/build -Sc++/samples
+      - name: Build samples
+        run: cmake --build c++/samples/build
+
