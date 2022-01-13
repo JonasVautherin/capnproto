@@ -64,6 +64,46 @@ elseif (WITH_OPENSSL)
   find_package(OpenSSL REQUIRED COMPONENTS Crypto SSL)
 endif()
 
+set(WITH_FIBERS "AUTO" CACHE STRING
+  "Whether or not to build libkj-async with fibers")
+# define list of values GUI will offer for the variable
+set_property(CACHE WITH_FIBERS PROPERTY STRINGS AUTO ON OFF)
+
+if (WITH_FIBERS OR WITH_FIBERS STREQUAL "AUTO")
+  # Fibers need makecontext, setcontext, getcontext, swapcontext that may be in libc,
+  # or in libucontext (e.g. for musl)
+  include(CheckLibraryExists)
+  check_library_exists(c makecontext "" LIBC_HAS_MAKECONTEXT)
+  check_library_exists(c getcontext "" LIBC_HAS_GETCONTEXT)
+  check_library_exists(c setcontext "" LIBC_HAS_SETCONTEXT)
+  check_library_exists(c swapcontext "" LIBC_HAS_SWAPCONTEXT)
+
+  if (LIBC_HAS_MAKECONTEXT AND LIBC_HAS_GETCONTEXT AND LIBC_HAS_SETCONTEXT AND LIBC_HAS_SWAPCONTEXT)
+    set(WITH_FIBERS ON)
+  else()
+    # Try with libucontext
+    find_package(PkgConfig)
+    if(PKG_CONFIG_FOUND)
+      pkg_check_modules(libucontext QUIET IMPORTED_TARGET libucontext)
+
+      if(libucontext_FOUND)
+        check_library_exists(ucontext makecontext "" UCONTEXT_HAS_MAKECONTEXT)
+        check_library_exists(ucontext getcontext "" UCONTEXT_HAS_GETCONTEXT)
+        check_library_exists(ucontext setcontext "" UCONTEXT_HAS_SETCONTEXT)
+        check_library_exists(ucontext swapcontext "" UCONTEXT_HAS_SWAPCONTEXT)
+      endif()
+    endif()
+
+    if(UCONTEXT_HAS_MAKECONTEXT AND UCONTEXT_HAS_GETCONTEXT AND UCONTEXT_HAS_SETCONTEXT AND UCONTEXT_HAS_SWAPCONTEXT)
+      set(WITH_FIBERS ON)
+    elseif(WITH_FIBERS STREQUAL "AUTO")
+      set(WITH_FIBERS OFF)
+    else()
+      message(FATAL_ERROR "Missing 'makecontext', 'getcontext', 'setcontext' or 'swapcontext' symbol in libc: KJ won't be able to build with fibers. Disable fibers (-DWITH_FIBERS=OFF).")
+    endif()
+  endif()
+endif()
+
 if(MSVC)
   # TODO(cleanup): Enable higher warning level in MSVC, but make sure to test
   #   build with that warning level and clean out false positives.
