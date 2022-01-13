@@ -195,6 +195,12 @@ AS_IF([test "$with_openssl" != no], [
 ])
 AM_CONDITIONAL([BUILD_KJ_TLS], [test "$with_openssl" != no])
 
+# Detect presence of ucontext and link it (it is necessary e.g.
+# for musl builds, because fibers need getcontext, makecontext and setcontext)
+AC_CHECK_LIB(ucontext, getcontext, [
+  ASYNC_LIBS="$ASYNC_LIBS -lucontext"
+])
+
 # CapnProtoConfig.cmake.in needs this variable.
 AC_SUBST(WITH_OPENSSL, $with_openssl)
 

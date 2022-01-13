@@ -137,6 +137,16 @@ if(NOT CAPNP_LITE)
   add_library(kj-async ${kj-async_sources})
   add_library(CapnProto::kj-async ALIAS kj-async)
   target_link_libraries(kj-async PUBLIC kj)
+
+  find_package(PkgConfig)
+  if(PKG_CONFIG_FOUND)
+    pkg_check_modules(libucontext QUIET IMPORTED_TARGET libucontext)
+      if(libucontext_FOUND)
+        # needed by e.g. musl for fibers
+        target_link_libraries(kj-async PUBLIC PkgConfig::libucontext)
+      endif()
+  endif()
+
   if(UNIX)
     # external clients of this library need to link to pthreads
     target_compile_options(kj-async INTERFACE "-pthread")
