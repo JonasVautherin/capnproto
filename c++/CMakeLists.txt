@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.4)
+cmake_minimum_required(VERSION 3.6)
 project("Cap'n Proto" CXX)
 set(VERSION 0.10-dev)
 
@@ -76,22 +76,28 @@ if (WITH_FIBERS OR WITH_FIBERS STREQUAL "AUTO")
   else()
     # Fibers need makecontext, setcontext, getcontext, swapcontext that may be in libc,
     # or in libucontext (e.g. for musl)
-    include(CheckLibraryExists)
-    check_library_exists(c makecontext "" LIBC_HAS_MAKECONTEXT)
-    check_library_exists(c getcontext "" LIBC_HAS_GETCONTEXT)
-    check_library_exists(c setcontext "" LIBC_HAS_SETCONTEXT)
-    check_library_exists(c swapcontext "" LIBC_HAS_SWAPCONTEXT)
+    include(CheckCXXSourceCompiles)
 
-    if (LIBC_HAS_MAKECONTEXT AND LIBC_HAS_GETCONTEXT AND LIBC_HAS_SETCONTEXT AND LIBC_HAS_SWAPCONTEXT)
+    check_cxx_source_compiles("
+#include <ucontext.h>
+int main() {
+  ucontext_t cp;
+  getcontext(&cp);
+  setcontext(&cp);
+  return 0;
+}
+" HAVE_UCONTEXT_LIBC)
+    if (HAVE_UCONTEXT_LIBC)
       set(_capnp_fibers_found ON)
     else()
       # Try with libucontext
       find_package(PkgConfig)
-      if(PKG_CONFIG_FOUND)
-        pkg_check_modules(libucontext QUIET IMPORTED_TARGET libucontext)
+      if (PKG_CONFIG_FOUND)
+        pkg_check_modules(libucontext IMPORTED_TARGET libucontext)
+        set(_capnp_fibers_found ${libucontext_FOUND})
+      else()
+        set(_capnp_fibers_found OFF)
       endif()
-
-      set(_capnp_fibers_found ${libucontext_FOUND})
     endif()
   endif()
 
