@@ -69,6 +69,9 @@ set(WITH_FIBERS "AUTO" CACHE STRING
 # define list of values GUI will offer for the variable
 set_property(CACHE WITH_FIBERS PROPERTY STRINGS AUTO ON OFF)
 
+# CapnProtoConfig.cmake.in needs this variable.
+set(_WITH_LIBUCONTEXT OFF)
+
 if (WITH_FIBERS OR WITH_FIBERS STREQUAL "AUTO")
   set(_capnp_fibers_found OFF)
   if (WIN32 OR CYGWIN)
@@ -94,7 +97,10 @@ int main() {
       find_package(PkgConfig)
       if (PKG_CONFIG_FOUND)
         pkg_check_modules(libucontext IMPORTED_TARGET libucontext)
-        set(_capnp_fibers_found ${libucontext_FOUND})
+        if (libucontext_FOUND)
+          set(_WITH_LIBUCONTEXT ON)
+          set(_capnp_fibers_found ON)
+        endif()
       else()
         set(_capnp_fibers_found OFF)
       endif()

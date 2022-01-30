@@ -252,8 +252,11 @@ AS_IF([test "$with_fibers" = yes], [
   CXXFLAGS="$CXXFLAGS -DKJ_USE_FIBERS=0"
 ])
 
-# CapnProtoConfig.cmake.in needs this variable.
-AC_SUBST(WITH_OPENSSL, $with_openssl)
+# CapnProtoConfig.cmake.in needs these variables,
+# we force them to NO because we don't need the CMake dependency for them,
+# the dependencies are provided by the .pc files.
+AC_SUBST(WITH_OPENSSL, NO)
+AC_SUBST(_WITH_LIBUCONTEXT, NO)
 
 AM_CONDITIONAL([HAS_FUZZING_ENGINE], [test "x$LIB_FUZZING_ENGINE" != "x"])
 
