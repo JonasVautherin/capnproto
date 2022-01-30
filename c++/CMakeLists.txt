@@ -83,10 +83,13 @@ if (WITH_FIBERS OR WITH_FIBERS STREQUAL "AUTO")
 
     check_cxx_source_compiles("
 #include <ucontext.h>
+void fn() {}
 int main() {
-  ucontext_t cp;
-  getcontext(&cp);
-  setcontext(&cp);
+  ucontext_t cp1, cp2;
+  getcontext(&cp1);
+  swapcontext(&cp1, &cp2);
+  setcontext(&cp2);
+  makecontext(&cp1, fn, 0);
   return 0;
 }
 " HAVE_UCONTEXT_LIBC)
