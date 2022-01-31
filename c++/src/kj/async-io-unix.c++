@@ -1210,6 +1210,7 @@ Promise<Array<SocketAddress>> SocketAddress::lookupHost(
 
     struct addrinfo hints;
     hints.ai_flags = AI_V4MAPPED | AI_ADDRCONFIG;
+    hints.ai_socktype = 0;
     struct addrinfo* list;
     int status = getaddrinfo(
         params.host == "*" ? nullptr : params.host.cStr(),
