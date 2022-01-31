@@ -31,7 +31,7 @@ namespace {
 
 TEST(EzRpc, Basic) {
   int callCount = 0;
-  EzRpcServer server(kj::heap<TestInterfaceImpl>(callCount), "127.0.0.1");
+  EzRpcServer server(kj::heap<TestInterfaceImpl>(callCount), "localhost");
 
   EzRpcClient client("localhost", server.getPort().wait(server.getWaitScope()));
 
@@ -47,7 +47,7 @@ TEST(EzRpc, Basic) {
 }
 
 TEST(EzRpc, DeprecatedNames) {
-  EzRpcServer server("127.0.0.1");
+  EzRpcServer server("localhost");
   int callCount = 0;
   server.exportCap("cap1", kj::heap<TestInterfaceImpl>(callCount));
   server.exportCap("cap2", kj::heap<TestCallOrderImpl>());

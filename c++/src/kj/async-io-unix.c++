@@ -1208,11 +1208,13 @@ Promise<Array<SocketAddress>> SocketAddress::lookupHost(
   auto thread = heap<Thread>(kj::mvCapture(params, [outFd,portHint](LookupParams&& params) {
     FdOutputStream output((AutoCloseFd(outFd)));
 
+    struct addrinfo hints;
+    hints.ai_flags = AI_V4MAPPED | AI_ADDRCONFIG;
     struct addrinfo* list;
     int status = getaddrinfo(
         params.host == "*" ? nullptr : params.host.cStr(),
         params.service == nullptr ? nullptr : params.service.cStr(),
-        nullptr, &list);
+        &hints, &list);
     if (status == 0) {
       KJ_DEFER(freeaddrinfo(list));
 

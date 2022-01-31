@@ -373,9 +373,11 @@ bool systemSupportsAddress(StringPtr addr, StringPtr service = nullptr) {
   // Can getaddrinfo() parse this addresses? This is only true if the address family (e.g., ipv6)
   // is configured on at least one interface. (The loopback interface usually has both ipv4 and
   // ipv6 configured, but not always.)
+  struct addrinfo hints;
+  hints.ai_flags = AI_V4MAPPED | AI_ADDRCONFIG;
   struct addrinfo* list;
   int status = getaddrinfo(
-      addr.cStr(), service == nullptr ? nullptr : service.cStr(), nullptr, &list);
+      addr.cStr(), service == nullptr ? nullptr : service.cStr(), &hints, &list);
   if (status == 0) {
     freeaddrinfo(list);
     return true;
