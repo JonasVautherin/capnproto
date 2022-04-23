@@ -1782,7 +1782,7 @@ private:
       question.paramExports = kj::mv(exports);
       question.isTailCall = isTailCall;
 
-      // Make the QuentionRef and result promise.
+      // Make the QuestionRef and result promise.
       SendInternalResult result;
       auto paf = kj::newPromiseAndFulfiller<kj::Promise<kj::Own<RpcResponse>>>();
       result.questionRef = kj::refcounted<QuestionRef>(

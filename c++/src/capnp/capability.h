@@ -399,7 +399,7 @@ public:
   // the call to continue.  Promise forking is used within the Cap'n Proto implementation -- in
   // particular each pipelined call forks the result promise.  So, if a caller made a pipelined
   // call and then dropped the original object, the call should not be canceled, but it would be
-  // excessively complicated for the framework to avoid notififying of cancellation as long as
+  // excessively complicated for the framework to avoid notifying of cancellation as long as
   // pipelined calls still exist.
 
 private:

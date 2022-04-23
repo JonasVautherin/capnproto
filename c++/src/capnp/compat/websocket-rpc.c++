@@ -57,7 +57,7 @@ kj::Promise<kj::Maybe<MessageReaderAndFds>> WebSocketMessageStream::tryReadMessa
             // The array is misaligned, so we need to copy it.
             auto words = kj::heapArray<word>(sizeInWords);
 
-            // Note: can't just use bytes.size(), since the the target buffer may
+            // Note: can't just use bytes.size(), since the target buffer may
             // be shorter due to integer division.
             memcpy(words.begin(), bytes.begin(), sizeInWords * sizeof(word));
             reader = kj::heap<FlatArrayMessageReader>(
