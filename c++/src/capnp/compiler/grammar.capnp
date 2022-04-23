@@ -247,6 +247,9 @@ struct Declaration {
 
       stream @4 :Void;
       # The keyword "stream".
+
+      realtimeStream @5 :Void;
+      # The keywords "realtime stream".
     }
 
     startByte @2 :UInt32;

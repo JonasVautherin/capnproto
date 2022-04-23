@@ -298,6 +298,7 @@ struct Declaration::ParamList {
     NAMED_LIST,
     TYPE,
     STREAM,
+    REALTIME_STREAM,
   };
 
   struct _capnpPrivate {
@@ -1974,6 +1975,9 @@ public:
   inline bool isStream() const;
   inline  ::capnp::Void getStream() const;
 
+  inline bool isRealtimeStream() const;
+  inline  ::capnp::Void getRealtimeStream() const;
+
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -2028,6 +2032,10 @@ public:
   inline bool isStream();
   inline  ::capnp::Void getStream();
   inline void setStream( ::capnp::Void value = ::capnp::VOID);
+
+  inline bool isRealtimeStream();
+  inline  ::capnp::Void getRealtimeStream();
+  inline void setRealtimeStream( ::capnp::Void value = ::capnp::VOID);
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -5790,6 +5798,32 @@ inline  ::capnp::Void Declaration::ParamList::Builder::getStream() {
 inline void Declaration::ParamList::Builder::setStream( ::capnp::Void value) {
   _builder.setDataField<Declaration::ParamList::Which>(
       ::capnp::bounded<0>() * ::capnp::ELEMENTS, Declaration::ParamList::STREAM);
+  _builder.setDataField< ::capnp::Void>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool Declaration::ParamList::Reader::isRealtimeStream() const {
+  return which() == Declaration::ParamList::REALTIME_STREAM;
+}
+inline bool Declaration::ParamList::Builder::isRealtimeStream() {
+  return which() == Declaration::ParamList::REALTIME_STREAM;
+}
+inline  ::capnp::Void Declaration::ParamList::Reader::getRealtimeStream() const {
+  KJ_IREQUIRE((which() == Declaration::ParamList::REALTIME_STREAM),
+              "Must check which() before get()ing a union member.");
+  return _reader.getDataField< ::capnp::Void>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
+}
+
+inline  ::capnp::Void Declaration::ParamList::Builder::getRealtimeStream() {
+  KJ_IREQUIRE((which() == Declaration::ParamList::REALTIME_STREAM),
+              "Must check which() before get()ing a union member.");
+  return _builder.getDataField< ::capnp::Void>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS);
+}
+inline void Declaration::ParamList::Builder::setRealtimeStream( ::capnp::Void value) {
+  _builder.setDataField<Declaration::ParamList::Which>(
+      ::capnp::bounded<0>() * ::capnp::ELEMENTS, Declaration::ParamList::REALTIME_STREAM);
   _builder.setDataField< ::capnp::Void>(
       ::capnp::bounded<0>() * ::capnp::ELEMENTS, value);
 }

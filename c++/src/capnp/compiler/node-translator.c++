@@ -1595,7 +1595,7 @@ void NodeTranslator::compileInterface(Declaration::Interface::Reader decl,
     }
 
     auto params = methodReader.getParams();
-    if (params.isStream()) {
+    if (params.isStream() || params.isRealtimeStream()) {
       errorReporter.addErrorOn(params, "'stream' can only appear after '->', not before.");
     }
     methodBuilder.setParamStructType(compileParamList(
@@ -1693,6 +1693,7 @@ uint64_t NodeTranslator::compileParamList(
       }
       return 0;
     case Declaration::ParamList::STREAM:
+    case Declaration::ParamList::REALTIME_STREAM:
       KJ_IF_MAYBE(streamCapnp, resolver.resolveImport("/capnp/stream.capnp")) {
         if (streamCapnp->resolver->resolveMember("StreamResult") == nullptr) {
           errorReporter.addErrorOn(paramList,
