@@ -419,6 +419,11 @@ struct Call {
   # The call parameters.  `params.content` is a struct whose fields correspond to the parameters of
   # the method.
 
+  isRealtime @9 :Bool = false;
+  # Indicates whether or not the caller cares about receiving a `Return` for this message.  Note that
+  # if the callee sends a `Return` (e.g. because it does not understand this flag), then the caller
+  # still must send a `Finish`.
+
   sendResultsTo :union {
     # Where should the return message be sent?
 
