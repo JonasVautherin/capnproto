@@ -270,6 +270,12 @@ public:
     return send().ignoreResult();
   }
 
+  kj::Promise<void> sendRealtime() override {
+    // We don't do any special handling of realtime messages in RequestHook for local requests,
+    // because there is no latency between the client and server in this case.
+    return send().ignoreResult();
+  }
+
   const void* getBrand() override {
     return nullptr;
   }
@@ -902,6 +908,10 @@ public:
   }
 
   kj::Promise<void> sendStreaming() override {
+    return kj::cp(exception);
+  }
+
+  kj::Promise<void> sendRealtime() override {
     return kj::cp(exception);
   }
 

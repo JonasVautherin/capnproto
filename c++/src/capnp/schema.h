@@ -279,6 +279,9 @@ public:
   bool isStreamResult() const;
   // Convenience method to check if this is the result type of a streaming RPC method.
 
+  bool isRealtimeResult() const;
+  // Convenience method to check if this is the result type of a realtime RPC method.
+
 private:
   StructSchema(Schema base): Schema(base) {}
   template <typename T> static inline StructSchema fromImpl() {
@@ -512,6 +515,8 @@ public:
 
   bool isStreaming() const { return getResultType().isStreamResult(); }
   // Check if this is a streaming method.
+
+  bool isRealtimeStreaming() const { return getResultType().isRealtimeResult(); }
 
   StructSchema getParamType() const;
   StructSchema getResultType() const;

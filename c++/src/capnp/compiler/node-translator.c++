@@ -29,6 +29,7 @@
 #include <map>
 #include <stdlib.h>
 #include <capnp/stream.capnp.h>
+#include <capnp/realtime.capnp.h>
 
 namespace capnp {
 namespace compiler {
@@ -1693,7 +1694,6 @@ uint64_t NodeTranslator::compileParamList(
       }
       return 0;
     case Declaration::ParamList::STREAM:
-    case Declaration::ParamList::REALTIME_STREAM:
       KJ_IF_MAYBE(streamCapnp, resolver.resolveImport("/capnp/stream.capnp")) {
         if (streamCapnp->resolver->resolveMember("StreamResult") == nullptr) {
           errorReporter.addErrorOn(paramList,
@@ -1707,6 +1707,20 @@ uint64_t NodeTranslator::compileParamList(
             "with the Cap'n Proto compiler.");
       }
       return typeId<StreamResult>();
+    case Declaration::ParamList::REALTIME_STREAM:
+      KJ_IF_MAYBE(realtimeCapnp, resolver.resolveImport("/capnp/realtime.capnp")) {
+        if (realtimeCapnp->resolver->resolveMember("RealtimeResult") == nullptr) {
+          errorReporter.addErrorOn(paramList,
+                                   "The version of '/capnp/realtime.capnp' found in your import path does not appear "
+                                   "to be the official one; it is missing the declaration of RealtimeResult.");
+        }
+      } else {
+        errorReporter.addErrorOn(paramList,
+                                 "A method declaration uses 'realtime stream', but '/capnp/realtime.capnp' is not found "
+                                 "in the import path. This is a standard file that should always be installed "
+                                 "with the Cap'n Proto compiler.");
+      }
+      return typeId<RealtimeResult>();
   }
   KJ_UNREACHABLE;
 }

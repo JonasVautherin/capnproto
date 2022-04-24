@@ -119,6 +119,12 @@ private:
       return result;
     }
 
+    kj::Promise<void> sendRealtime() override {
+      auto result = inner->sendRealtime();
+      parent->wrap(result);
+      return result;
+    }
+
     const void* getBrand() override {
       return nullptr;
     }

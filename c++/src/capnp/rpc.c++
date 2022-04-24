@@ -26,6 +26,7 @@
 #include <kj/async.h>
 #include <kj/one-of.h>
 #include <kj/function.h>
+#include <limits>
 #include <functional>  // std::greater
 #include <unordered_map>
 #include <map>
@@ -277,6 +278,26 @@ public:
 private:
   T low[16];
   std::unordered_map<Id, T> high;
+};
+
+template <typename Id>
+class RealtimeIdGenerator {
+  // Realtime messages need a unique QuestionId, even though the question is not
+  // saved by the caller.  The strategy here is to give a rolling id in the range
+  // [2^31, 2^32 - 1), assuming that when all the ids of the range have been used,
+  // the first ones are available again.
+
+public:
+  Id next() {
+    if (id == std::numeric_limits<Id>::max()) {
+      id = 1 << 31;
+    }
+
+    return id++;
+  }
+
+private:
+  Id id = 1 << 31;
 };
 
 // =======================================================================================
@@ -614,6 +635,10 @@ private:
   ImportTable<ImportId, Import> imports;
   // The Four Tables!
   // The order of the tables is important for correct destruction.
+
+  RealtimeIdGenerator<QuestionId> realtimeIdGenerator;
+  // Realtime messages need a unique QuestionId even though the caller does not
+  // maintain the full question state.
 
   std::unordered_map<ClientHook*, ExportId> exportsByCap;
   // Maps already-exported ClientHook objects to their ID in the export table.
@@ -1702,6 +1727,25 @@ private:
       }
     }
 
+    kj::Promise<void> sendRealtime() override {
+      if (!connectionState->connection.is<Connected>()) {
+        // Connection is broken.
+        return kj::cp(connectionState->connection.get<Disconnected>());
+      }
+
+      KJ_IF_MAYBE(redirect, target->writeTarget(callBuilder.getTarget())) {
+        // Whoops, this capability has been redirected while we were building the request!
+        // We'll have to make a new request and do a copy.  Ick.
+
+        auto replacement = redirect->get()->newCall(
+            callBuilder.getInterfaceId(), callBuilder.getMethodId(), paramsBuilder.targetSize());
+        replacement.set(paramsBuilder);
+        return RequestHook::from(kj::mv(replacement))->sendRealtime();
+      } else {
+        return sendRealtimeInternal(false);
+      }
+    }
+
     struct TailInfo {
       QuestionId questionId;
       kj::Promise<void> promise;
@@ -1837,7 +1881,8 @@ private:
           flow = target->flowController.emplace(
               connectionState->connection.get<Connected>()->newStream());
         }
-        flowPromise = flow->send(kj::mv(message), setup.promise.ignoreResult());
+        flowPromise =
+            flow->send(kj::mv(message), setup.promise.ignoreResult());
       })) {
         // We can't safely throw the exception from here since we've already modified the question
         // table state. We'll have to reject the promise instead.
@@ -1848,6 +1893,31 @@ private:
       }
 
       return kj::mv(flowPromise);
+    }
+
+    kj::Promise<void> sendRealtimeInternal(bool isTailCall) {
+      // Build the cap table.
+      kj::Vector<int> fds;
+      auto exports = connectionState->writeDescriptors(
+          capTable.getTable(), callBuilder.getParams(), fds);
+      message->setFds(fds.releaseAsArray());
+
+      // Finish and send.
+      callBuilder.setIsRealtime(true);
+      callBuilder.setQuestionId(connectionState->realtimeIdGenerator.next());
+      if (isTailCall) {
+        callBuilder.getSendResultsTo().setYourself();
+      }
+      KJ_IF_MAYBE(exception, kj::runCatchingExceptions([&]() {
+        KJ_CONTEXT("sending RPC call", callBuilder.getInterfaceId(),
+                   callBuilder.getMethodId());
+        message->sendRealtime();
+      })) {
+        connectionState->releaseExports(exports);
+        return kj::mv(*exception);
+      }
+
+      return kj::READY_NOW;
     }
   };
 
@@ -2083,7 +2153,7 @@ private:
                    kj::Array<kj::Maybe<kj::Own<ClientHook>>> capTableArray,
                    const AnyPointer::Reader& params,
                    bool redirectResults, kj::Own<kj::PromiseFulfiller<void>>&& cancelFulfiller,
-                   uint64_t interfaceId, uint16_t methodId)
+                   uint64_t interfaceId, uint16_t methodId, bool realtime = false)
         : connectionState(kj::addRef(connectionState)),
           answerId(answerId),
           interfaceId(interfaceId),
@@ -2094,6 +2164,7 @@ private:
           params(paramsCapTable.imbue(params)),
           returnMessage(nullptr),
           redirectResults(redirectResults),
+          realtime(realtime),
           cancelFulfiller(kj::mv(cancelFulfiller)) {
       connectionState.callWordsInFlight += requestSize;
     }
@@ -2102,9 +2173,10 @@ private:
       if (isFirstResponder()) {
         // We haven't sent a return yet, so we must have been canceled.  Send a cancellation return.
         unwindDetector.catchExceptionsIfUnwinding([&]() {
-          // Don't send anything if the connection is broken.
+          // Don't send anything if the connection is broken or if it is a realtime
+          // call, hence not requiring a 'Return'.
           bool shouldFreePipeline = true;
-          if (connectionState->connection.is<Connected>()) {
+          if (!realtime && connectionState->connection.is<Connected>()) {
             auto message = connectionState->connection.get<Connected>()->newOutgoingMessage(
                 messageSizeHint<rpc::Return>() + sizeInWords<rpc::Payload>());
             auto builder = message->getBody().initAs<rpc::Message>().initReturn();
@@ -2358,6 +2430,7 @@ private:
     rpc::Return::Builder returnMessage;
     bool redirectResults = false;
     bool responseSent = false;
+    bool realtime = false;
     kj::Maybe<kj::Own<kj::PromiseFulfiller<AnyPointer::Pipeline>>> tailCallPipelineFulfiller;
 
     // Cancellation state ----------------------------------
@@ -2689,9 +2762,18 @@ private:
     auto context = kj::refcounted<RpcCallContext>(
         *this, answerId, kj::mv(message), kj::mv(capTableArray), payload.getContent(),
         redirectResults, kj::mv(cancelPaf.fulfiller),
-        call.getInterfaceId(), call.getMethodId());
+        call.getInterfaceId(), call.getMethodId(), call.getIsRealtime());
 
     // No more using `call` after this point, as it now belongs to the context.
+
+    if (call.getIsRealtime()) {
+      auto promiseAndPipeline = startCall(
+          call.getInterfaceId(), call.getMethodId(), kj::mv(capability), context->addRef());
+      promiseAndPipeline.promise
+          .exclusiveJoin(kj::mv(cancelPaf.promise))
+          .detach([](kj::Exception&&) {});
+      return;
+    }
 
     {
       auto& answer = answers[answerId];
@@ -2922,9 +3004,26 @@ private:
         // ahead and delete it from the table.
         questions.erase(ret.getAnswerId(), *question);
       }
-
     } else {
-      KJ_FAIL_REQUIRE("Invalid question ID in Return message.") { return; }
+      auto questionId = ret.getAnswerId();
+      if (questionId >= 1 << 31) {
+        // The question was not found in the question table, and its id is in
+        // the range [2^31, 2^32): it is a `Return` for a realtime `Call`,
+        // but the callee does not support realtime messages.  Therefore, we
+        // just send a `Finish` message.
+
+        KJ_IF_MAYBE(e, kj::runCatchingExceptions([&]() {
+          auto message = connection.get<Connected>()->newOutgoingMessage(
+              messageSizeHint<rpc::Finish>());
+          auto builder = message->getBody().getAs<rpc::Message>().initFinish();
+          builder.setQuestionId(questionId);
+          message->send();
+        })) {
+          disconnect(kj::mv(*e));
+        }
+      } else {
+        KJ_FAIL_REQUIRE("Invalid question ID in Return message.") { return; }
+      }
     }
   }
 
