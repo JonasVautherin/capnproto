@@ -63,7 +63,7 @@ Capability::Server::DispatchCallResult DynamicCapability::Server::dispatchCall(
       return {
         call(method, CallContext<DynamicStruct, DynamicStruct>(*context.hook,
             method.getParamType(), resultType)),
-        resultType.isStreamResult()
+        resultType.isStreamResult() || resultType.isRealtimeResult()
       };
     } else {
       return internalUnimplemented(
@@ -99,6 +99,14 @@ kj::Promise<void> Request<DynamicStruct, DynamicStruct>::sendStreaming() {
   KJ_REQUIRE(resultSchema.isStreamResult());
 
   auto promise = hook->sendStreaming();
+  hook = nullptr;  // prevent reuse
+  return promise;
+}
+
+kj::Promise<void> Request<DynamicStruct, DynamicStruct>::sendRealtime() {
+  KJ_REQUIRE(resultSchema.isRealtimeResult());
+
+  auto promise = hook->sendRealtime();
   hook = nullptr;  // prevent reuse
   return promise;
 }
