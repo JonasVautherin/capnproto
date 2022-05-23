@@ -400,6 +400,17 @@ TEST(SchemaLoader, LoadStreaming) {
   KJ_EXPECT(results.getShortDisplayName() == "StreamResult", results.getShortDisplayName());
 }
 
+TEST(SchemaLoader, LoadRealtime) {
+  SchemaLoader loader;
+
+  InterfaceSchema schema =
+      loader.load(Schema::from<test::TestRealtimeStreaming>().getProto()).asInterface();
+
+  auto results = schema.getMethodByName("doRealtimeStreamI").getResultType();
+  KJ_EXPECT(results.isRealtimeResult());
+  KJ_EXPECT(results.getShortDisplayName() == "RealtimeResult", results.getShortDisplayName());
+}
+
 }  // namespace
 }  // namespace _ (private)
 }  // namespace capnp
