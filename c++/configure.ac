@@ -225,9 +225,9 @@ AS_IF([test "$with_fibers" != no], [
       ;;
     * )
       # Fibers need the symbols getcontext, setcontext, swapcontext and makecontext.
-      # We assume that makecontext implies the rest.
+      # We assume that getcontext implies the rest.
       libc_supports_fibers=yes
-      AC_SEARCH_LIBS([makecontext], [], [], [
+      AC_SEARCH_LIBS([getcontext], [], [], [
         libc_supports_fibers=no
       ])
 
@@ -236,7 +236,7 @@ AS_IF([test "$with_fibers" != no], [
         ], [
         # If getcontext does not exist in libc, try with libucontext
         ucontext_supports_fibers=yes
-        AC_CHECK_LIB(ucontext, [makecontext], [], [
+        AC_CHECK_LIB(ucontext, [getcontext], [], [
           ucontext_supports_fibers=no
         ])
         AS_IF([test "$ucontext_supports_fibers" = yes], [
