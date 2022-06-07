@@ -1519,7 +1519,7 @@ public:
     }
 
     auto connected = result->waitConnected();
-    return connected.then(kj::mvCapture(result, [fd](Own<AsyncIoStream>&& stream) {
+    return connected.then([fd,stream=kj::mv(result)]() mutable -> Own<AsyncIoStream> {
       int err;
       socklen_t errlen = sizeof(err);
       KJ_SYSCALL(getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &errlen));
@@ -1527,7 +1527,7 @@ public:
         KJ_FAIL_SYSCALL("connect()", err) { break; }
       }
       return kj::mv(stream);
-    }));
+    });
   }
   Own<ConnectionReceiver> wrapListenSocketFd(
       int fd, NetworkFilter& filter, uint flags = 0) override {
@@ -1747,9 +1747,10 @@ public:
       : lowLevel(parent.lowLevel), filter(allow, deny, parent.filter) {}
 
   Promise<Own<NetworkAddress>> parseAddress(StringPtr addr, uint portHint = 0) override {
-    return evalLater(mvCapture(heapString(addr), [this,portHint](String&& addr) {
+    auto addrCopy = heapString(addr);
+    return evalLater([this,portHint,addr=kj::mv(addrCopy)]() {
       return SocketAddress::parse(lowLevel, addr, portHint, filter);
-    })).then([this](Array<SocketAddress> addresses) -> Own<NetworkAddress> {
+    }).then([this](Array<SocketAddress> addresses) -> Own<NetworkAddress> {
       return heap<NetworkAddressImpl>(lowLevel, filter, kj::mv(addresses));
     });
   }
@@ -2031,13 +2032,12 @@ public:
 
     auto pipe = lowLevel.wrapSocketFd(fds[0], NEW_FD_FLAGS);
 
-    auto thread = heap<Thread>(kj::mvCapture(startFunc,
-        [threadFd](Function<void(AsyncIoProvider&, AsyncIoStream&, WaitScope&)>&& startFunc) {
+    auto thread = heap<Thread>([threadFd,startFunc=kj::mv(startFunc)]() mutable {
       LowLevelAsyncIoProviderImpl lowLevel;
       auto stream = lowLevel.wrapSocketFd(threadFd, NEW_FD_FLAGS);
       AsyncIoProviderImpl ioProvider(lowLevel);
       startFunc(ioProvider, *stream, lowLevel.getWaitScope());
-    }));
+    });
 
     return { kj::mv(thread), kj::mv(pipe) };
   }
