@@ -10,15 +10,45 @@ on:
     - 'release-*'
 
 jobs:
-  ios:
+  ios-cmake:
     name: ${{ matrix.name }}
     runs-on: macos-latest
     strategy:
       matrix:
         include:
           - name: ios
+            platform: OS64
             sdk: iphoneos
           - name: ios_simulator
+            platform: SIMULATOR64
+            sdk: iphonesimulator
+    steps:
+      - uses: actions/checkout@v2
+      - name: install dependencies
+        run: |
+            brew install autoconf automake libtool pkg-config
+      - name: build capnp-host and capnpc-c++-host
+        run: |
+            cmake -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -Bbuild/macos -S.
+            cmake --build build/macos
+            cp ./build/macos/c++/src/capnp/capnp capnp-host
+            cp ./build/macos/c++/src/capnp/capnpc-c++ capnpc-c++-host
+      - name: cmake configure
+        run: |
+            CAPNP=$(pwd)/capnp-host CAPNPC_CXX=$(pwd)/capnpc-c++-host CMAKE_TOOLCHAIN_FILE=$(pwd)/c++/ios.toolchain.cmake cmake -DPLATFORM=${{ matrix.platform }} -DEXTERNAL_CAPNP=ON -DCAPNP_LITE=ON -DBUILD_TESTING=OFF -Bbuild -H.
+      - name: cmake build
+        run: cmake --build build
+  ios-make:
+    name: ${{ matrix.name }}
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - name: ios
+            platform: OS64
+            sdk: iphoneos
+          - name: ios_simulator
+            platform: SIMULATOR64
             sdk: iphonesimulator
     steps:
       - uses: actions/checkout@v2
