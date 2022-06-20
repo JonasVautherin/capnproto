@@ -35,7 +35,7 @@ jobs:
             cp ./build/macos/c++/src/capnp/capnpc-c++ capnpc-c++-host
       - name: cmake configure
         run: |
-            CAPNP=$(pwd)/capnp-host CAPNPC_CXX=$(pwd)/capnpc-c++-host CMAKE_TOOLCHAIN_FILE=$(pwd)/c++/ios.toolchain.cmake cmake -DPLATFORM=${{ matrix.platform }} -DEXTERNAL_CAPNP=ON -DCAPNP_LITE=ON -DBUILD_TESTING=OFF -Bbuild -H.
+            CAPNP=$(pwd)/capnp-host CAPNPC_CXX=$(pwd)/capnpc-c++-host CMAKE_TOOLCHAIN_FILE=$(pwd)/c++/ios.toolchain.cmake cmake -DPLATFORM=${{ matrix.platform }} -DEXTERNAL_CAPNP=ON -DBUILD_TESTING=OFF -Bbuild -H.
       - name: cmake build
         run: cmake --build build
   ios-make:
