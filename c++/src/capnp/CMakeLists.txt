@@ -252,7 +252,7 @@ if(BUILD_TESTING)
   if(CAPNP_LITE)
     set(test_libraries capnp kj-test kj)
   else()
-    set(test_libraries capnp-json capnp-rpc capnp-websocket capnp capnpc kj-http kj-async kj-test kj)
+    set(test_libraries capnp-json capnp-rpc capnp-websocket capnp capnpc kj-http kj-async kj-test kj-tls kj)
   endif()
 
   add_executable(capnp-tests
