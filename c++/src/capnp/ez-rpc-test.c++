@@ -24,6 +24,7 @@
 #include "ez-rpc.h"
 #include "test-util.h"
 #include <kj/compat/gtest.h>
+#include <capnp/compat/udp-rpc.h>
 
 namespace capnp {
 namespace _ {
@@ -93,6 +94,41 @@ TEST(EzRpc, ExternalTcpMessageStream) {
   auto clientAddr = clientIoProvider.getNetwork().parseAddress("localhost", serverPort).wait(waitScope);
   auto clientStream = clientAddr->connect().wait(waitScope);
   client.setStream(kj::heap<AsyncIoMessageStream>(kj::mv(clientStream)));
+
+  auto cap = client.getMain<test::TestInterface>();
+  auto request = cap.fooRequest();
+  request.setI(123);
+  request.setJ(true);
+
+  EXPECT_EQ(0, callCount);
+  auto response = request.send().wait(waitScope);
+  EXPECT_EQ("foo", response.getX());
+  EXPECT_EQ(1, callCount); //auto clientAddr = serverIoProvider.get
+}
+
+TEST(EzRpc, ExternalUdpMessageStream) {
+  // Prepare server side (EzRpcServer + server stream)
+  int callCount = 0;
+  EzRpcServer server(kj::heap<TestInterfaceImpl>(callCount));
+  auto& waitScope = server.getWaitScope();
+  auto& serverIoProvider = server.getIoProvider();
+
+  auto serverRemoteAddr = serverIoProvider.getNetwork().parseAddress("localhost", 33333).wait(waitScope);
+  auto serverLocalAddr = serverIoProvider.getNetwork().parseAddress("*").wait(waitScope);
+  auto serverLocalPort = serverLocalAddr->bindDatagramPort();
+  auto serverMessageStream = kj::heap<UdpMessageStream>(*serverLocalPort, *serverRemoteAddr);
+  server.addStream(kj::mv(serverMessageStream));
+
+  // Prepare client side (EzRpcClient + client stream)
+  EzRpcClient client;
+  auto& clientIoProvider = client.getIoProvider();
+
+  auto serverPort = serverLocalPort->getPort();
+  auto clientRemoteAddr = clientIoProvider.getNetwork().parseAddress("localhost", serverPort).wait(waitScope);
+  auto clientLocalAddr = clientIoProvider.getNetwork().parseAddress("*", 33333).wait(waitScope);
+  auto clientLocalPort = clientLocalAddr->bindDatagramPort();
+  auto clientMessageStream = kj::heap<UdpMessageStream>(*clientLocalPort, *clientRemoteAddr);
+  client.setStream(kj::mv(clientMessageStream));
 
   auto cap = client.getMain<test::TestInterface>();
   auto request = cap.fooRequest();

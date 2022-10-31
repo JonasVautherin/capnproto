@@ -140,9 +140,11 @@ endif()
 
 set(capnp-websocket_sources
   compat/websocket-rpc.c++
+  compat/udp-rpc.c++
 )
 set(capnp-websocket_headers
   compat/websocket-rpc.h
+  compat/udp-rpc.h
 )
 if(NOT CAPNP_LITE)
   add_library(capnp-websocket ${capnp-websocket_sources})
