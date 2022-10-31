@@ -215,7 +215,7 @@ public:
 
   ~EzRpcServer() noexcept(false);
 
-  void addStream(kj::Own<MessageStream>&& stream, ReaderOptions readerOpts);
+  void addStream(kj::Own<MessageStream>&& stream, ReaderOptions readerOpts = ReaderOptions());
   // Add an external stream to this server.
   // `readerOpts` acts as in the constructors.
 
