@@ -873,6 +873,52 @@ TEST(Async, TaskSetOnEmpty) {
   promise.wait(waitScope);
 }
 
+KJ_TEST("TaskSet::clear()") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+
+  class ClearOnError: public TaskSet::ErrorHandler {
+  public:
+    TaskSet* tasks;
+    void taskFailed(kj::Exception&& exception) override {
+      KJ_EXPECT(exception.getDescription().endsWith("example TaskSet failure"));
+      tasks->clear();
+    }
+  };
+
+  ClearOnError errorHandler;
+  TaskSet tasks(errorHandler);
+  errorHandler.tasks = &tasks;
+
+  auto doTest = [&](auto&& causeClear) {
+    KJ_EXPECT(tasks.isEmpty());
+
+    uint count = 0;
+    tasks.add(kj::Promise<void>(kj::READY_NOW).attach(kj::defer([&]() { ++count; })));
+    tasks.add(kj::Promise<void>(kj::NEVER_DONE).attach(kj::defer([&]() { ++count; })));
+    tasks.add(kj::Promise<void>(kj::NEVER_DONE).attach(kj::defer([&]() { ++count; })));
+
+    auto onEmpty = tasks.onEmpty();
+    KJ_EXPECT(!onEmpty.poll(waitScope));
+    KJ_EXPECT(count == 1);
+    KJ_EXPECT(!tasks.isEmpty());
+
+    causeClear();
+    KJ_EXPECT(tasks.isEmpty());
+    onEmpty.wait(waitScope);
+    KJ_EXPECT(count == 3);
+  };
+
+  // Try it where we just call clear() directly.
+  doTest([&]() { tasks.clear(); });
+
+  // Try causing clear() inside taskFailed(), ensuring that this is permitted.
+  doTest([&]() {
+    tasks.add(KJ_EXCEPTION(FAILED, "example TaskSet failure"));
+    waitScope.poll();
+  });
+}
+
 class DestructorDetector {
 public:
   DestructorDetector(bool& setTrue): setTrue(setTrue) {}
@@ -1248,8 +1294,8 @@ KJ_TEST("fiber pool") {
     }
   };
   run();
-  KJ_ASSERT_NONNULL(i1_local);
-  KJ_ASSERT_NONNULL(i2_local);
+  KJ_ASSERT(i1_local != nullptr);
+  KJ_ASSERT(i2_local != nullptr);
   // run the same thing and reuse the fibers
   run();
 }
@@ -1374,6 +1420,12 @@ KJ_TEST("fiber pool limit") {
   // that the second stack doesn't match the previously-deleted stack, because there's a high
   // likelihood that the new stack would be allocated in the same location.
 }
+
+#if __GNUC__ >= 12 && !__clang__
+// The test below intentionally takes a pointer to a stack variable and stores it past the end
+// of the function. This seems to trigger a warning in newer GCCs.
+#pragma GCC diagnostic ignored "-Wdangling-pointer"
+#endif
 
 KJ_TEST("run event loop on freelisted stacks") {
   if (isLibcContextHandlingKnownBroken()) return;
@@ -1579,6 +1631,15 @@ KJ_TEST("capture weird alignment in continuation") {
   KJ_EXPECT(p2.wait(waitScope).i == 579);
 }
 #endif
+
+KJ_TEST("constPromise") {
+  EventLoop loop;
+  WaitScope waitScope(loop);
+
+  Promise<int> p = constPromise<int, 123>();
+  int i = p.wait(waitScope);
+  KJ_EXPECT(i == 123);
+}
 
 }  // namespace
 }  // namespace kj

@@ -6,7 +6,9 @@
 #include <capnp/generated-header-support.h>
 #include <kj/windows-sanity.h>
 
-#if CAPNP_VERSION != 11000
+#ifndef CAPNP_VERSION
+#error "CAPNP_VERSION is not defined, is capnp/generated-header-support.h missing?"
+#elif CAPNP_VERSION != 11000
 #error "Version mismatch between generated code and library headers.  You must use the same version of the Cap'n Proto compiler and library."
 #endif
 
@@ -764,6 +766,10 @@ public:
 
   inline bool getAllowThirdPartyTailCall() const;
 
+  inline bool getNoPromisePipelining() const;
+
+  inline bool getOnlyPromisePipeline() const;
+
   inline bool getIsRealtime() const;
 
 private:
@@ -822,6 +828,12 @@ public:
 
   inline bool getAllowThirdPartyTailCall();
   inline void setAllowThirdPartyTailCall(bool value);
+
+  inline bool getNoPromisePipelining();
+  inline void setNoPromisePipelining(bool value);
+
+  inline bool getOnlyPromisePipeline();
+  inline void setOnlyPromisePipeline(bool value);
 
   inline bool getIsRealtime();
   inline void setIsRealtime(bool value);
@@ -994,6 +1006,8 @@ public:
   inline bool hasAcceptFromThirdParty() const;
   inline ::capnp::AnyPointer::Reader getAcceptFromThirdParty() const;
 
+  inline bool getNoFinishNeeded() const;
+
 private:
   ::capnp::_::StructReader _reader;
   template <typename, ::capnp::Kind>
@@ -1061,6 +1075,9 @@ public:
   inline bool hasAcceptFromThirdParty();
   inline ::capnp::AnyPointer::Builder getAcceptFromThirdParty();
   inline ::capnp::AnyPointer::Builder initAcceptFromThirdParty();
+
+  inline bool getNoFinishNeeded();
+  inline void setNoFinishNeeded(bool value);
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -3409,18 +3426,46 @@ inline void Call::Builder::setAllowThirdPartyTailCall(bool value) {
       ::capnp::bounded<128>() * ::capnp::ELEMENTS, value);
 }
 
-inline bool Call::Reader::getIsRealtime() const {
+inline bool Call::Reader::getNoPromisePipelining() const {
   return _reader.getDataField<bool>(
       ::capnp::bounded<129>() * ::capnp::ELEMENTS);
 }
 
-inline bool Call::Builder::getIsRealtime() {
+inline bool Call::Builder::getNoPromisePipelining() {
   return _builder.getDataField<bool>(
       ::capnp::bounded<129>() * ::capnp::ELEMENTS);
 }
-inline void Call::Builder::setIsRealtime(bool value) {
+inline void Call::Builder::setNoPromisePipelining(bool value) {
   _builder.setDataField<bool>(
       ::capnp::bounded<129>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool Call::Reader::getOnlyPromisePipeline() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<130>() * ::capnp::ELEMENTS);
+}
+
+inline bool Call::Builder::getOnlyPromisePipeline() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<130>() * ::capnp::ELEMENTS);
+}
+inline void Call::Builder::setOnlyPromisePipeline(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<130>() * ::capnp::ELEMENTS, value);
+}
+
+inline bool Call::Reader::getIsRealtime() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<131>() * ::capnp::ELEMENTS);
+}
+
+inline bool Call::Builder::getIsRealtime() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<131>() * ::capnp::ELEMENTS);
+}
+inline void Call::Builder::setIsRealtime(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<131>() * ::capnp::ELEMENTS, value);
 }
 
 inline  ::capnp::rpc::Call::SendResultsTo::Which Call::SendResultsTo::Reader::which() const {
@@ -3779,6 +3824,20 @@ inline ::capnp::AnyPointer::Builder Return::Builder::initAcceptFromThirdParty() 
       ::capnp::bounded<0>() * ::capnp::POINTERS));
   result.clear();
   return result;
+}
+
+inline bool Return::Reader::getNoFinishNeeded() const {
+  return _reader.getDataField<bool>(
+      ::capnp::bounded<33>() * ::capnp::ELEMENTS);
+}
+
+inline bool Return::Builder::getNoFinishNeeded() {
+  return _builder.getDataField<bool>(
+      ::capnp::bounded<33>() * ::capnp::ELEMENTS);
+}
+inline void Return::Builder::setNoFinishNeeded(bool value) {
+  _builder.setDataField<bool>(
+      ::capnp::bounded<33>() * ::capnp::ELEMENTS, value);
 }
 
 inline  ::uint32_t Finish::Reader::getQuestionId() const {

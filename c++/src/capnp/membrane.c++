@@ -243,6 +243,11 @@ public:
     return promise;
   }
 
+  AnyPointer::Pipeline sendForPipeline() override {
+    return AnyPointer::Pipeline(kj::refcounted<MembranePipelineHook>(
+        PipelineHook::from(inner->sendForPipeline()), policy->addRef(), reverse));
+  }
+
   const void* getBrand() override {
     return MEMBRANE_BRAND;
   }
@@ -296,10 +301,6 @@ public:
 
   kj::Promise<void> tailCall(kj::Own<RequestHook>&& request) override {
     return inner->tailCall(MembraneRequestHook::wrap(kj::mv(request), *policy, !reverse));
-  }
-
-  void allowCancellation() override {
-    inner->allowCancellation();
   }
 
   kj::Promise<AnyPointer::Pipeline> onTailCall() override {
@@ -388,9 +389,10 @@ public:
   }
 
   Request<AnyPointer, AnyPointer> newCall(
-      uint64_t interfaceId, uint16_t methodId, kj::Maybe<MessageSize> sizeHint) override {
+      uint64_t interfaceId, uint16_t methodId, kj::Maybe<MessageSize> sizeHint,
+      CallHints hints) override {
     KJ_IF_MAYBE(r, resolved) {
-      return r->get()->newCall(interfaceId, methodId, sizeHint);
+      return r->get()->newCall(interfaceId, methodId, sizeHint, hints);
     }
 
     auto redirect = reverse
@@ -404,23 +406,24 @@ public:
         // otherwise behavior will differ depending on whether the promise is resolved.
         KJ_IF_MAYBE(p, whenMoreResolved()) {
           return newLocalPromiseClient(p->attach(addRef()))
-              ->newCall(interfaceId, methodId, sizeHint);
+              ->newCall(interfaceId, methodId, sizeHint, hints);
         }
       }
 
-      return ClientHook::from(kj::mv(*r))->newCall(interfaceId, methodId, sizeHint);
+      return ClientHook::from(kj::mv(*r))->newCall(interfaceId, methodId, sizeHint, hints);
     } else {
       // For pass-through calls, we don't worry about promises, because if the capability resolves
       // to something outside the membrane, then the call will pass back out of the membrane too.
       return MembraneRequestHook::wrap(
-          inner->newCall(interfaceId, methodId, sizeHint), *policy, reverse);
+          inner->newCall(interfaceId, methodId, sizeHint, hints), *policy, reverse);
     }
   }
 
   VoidPromiseAndPipeline call(uint64_t interfaceId, uint16_t methodId,
-                              kj::Own<CallContextHook>&& context) override {
+                              kj::Own<CallContextHook>&& context,
+                              CallHints hints) override {
     KJ_IF_MAYBE(r, resolved) {
-      return r->get()->call(interfaceId, methodId, kj::mv(context));
+      return r->get()->call(interfaceId, methodId, kj::mv(context), hints);
     }
 
     auto redirect = reverse
@@ -434,17 +437,21 @@ public:
         // otherwise behavior will differ depending on whether the promise is resolved.
         KJ_IF_MAYBE(p, whenMoreResolved()) {
           return newLocalPromiseClient(p->attach(addRef()))
-              ->call(interfaceId, methodId, kj::mv(context));
+              ->call(interfaceId, methodId, kj::mv(context), hints);
         }
       }
 
-      return ClientHook::from(kj::mv(*r))->call(interfaceId, methodId, kj::mv(context));
+      return ClientHook::from(kj::mv(*r))->call(interfaceId, methodId, kj::mv(context), hints);
     } else {
       // !reverse because calls to the CallContext go in the opposite direction.
       auto result = inner->call(interfaceId, methodId,
-          kj::refcounted<MembraneCallContextHook>(kj::mv(context), policy->addRef(), !reverse));
+          kj::refcounted<MembraneCallContextHook>(kj::mv(context), policy->addRef(), !reverse),
+          hints);
 
-      KJ_IF_MAYBE(r, policy->onRevoked()) {
+      if (hints.onlyPromisePipeline) {
+        // Just in case the called capability returned a valid promise, replace it here.
+        result.promise = kj::NEVER_DONE;
+      } else KJ_IF_MAYBE(r, policy->onRevoked()) {
         result.promise = result.promise.exclusiveJoin(kj::mv(*r));
       }
 
@@ -506,9 +513,11 @@ public:
   }
 
   kj::Maybe<int> getFd() override {
-    // We can't let FDs pass over membranes because we have no way to enforce the membrane policy
-    // on them. If the MembranePolicy wishes to explicitly permit certain FDs to pass, it can
-    // always do so by overriding the appropriate policy methods.
+    KJ_IF_MAYBE(f, inner->getFd()) {
+      if (policy->allowFdPassthrough()) {
+        return *f;
+      }
+    }
     return nullptr;
   }
 

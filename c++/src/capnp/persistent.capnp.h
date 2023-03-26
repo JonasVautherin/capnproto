@@ -9,7 +9,9 @@
 #include <capnp/capability.h>
 #endif  // !CAPNP_LITE
 
-#if CAPNP_VERSION != 11000
+#ifndef CAPNP_VERSION
+#error "CAPNP_VERSION is not defined, is capnp/generated-header-support.h missing?"
+#elif CAPNP_VERSION != 11000
 #error "Version mismatch between generated code and library headers.  You must use the same version of the Cap'n Proto compiler and library."
 #endif
 
@@ -539,7 +541,7 @@ template <typename SturdyRef, typename Owner>
 CAPNP_AUTO_IF_MSVC(::capnp::Request<typename  ::capnp::Persistent<SturdyRef, Owner>::SaveParams, typename  ::capnp::Persistent<SturdyRef, Owner>::SaveResults>)
 Persistent<SturdyRef, Owner>::Client::saveRequest(::kj::Maybe< ::capnp::MessageSize> sizeHint) {
   return newCall<typename  ::capnp::Persistent<SturdyRef, Owner>::SaveParams, typename  ::capnp::Persistent<SturdyRef, Owner>::SaveResults>(
-      0xc8cb212fcd9f5691ull, 0, sizeHint);
+      0xc8cb212fcd9f5691ull, 0, sizeHint, {false});
 }
 template <typename SturdyRef, typename Owner>
 ::kj::Promise<void> Persistent<SturdyRef, Owner>::Server::save(SaveContext) {
@@ -567,6 +569,7 @@ template <typename SturdyRef, typename Owner>
       return {
         save(::capnp::Capability::Server::internalGetTypedContext<
             typename  ::capnp::Persistent<SturdyRef, Owner>::SaveParams, typename  ::capnp::Persistent<SturdyRef, Owner>::SaveResults>(context)),
+        false,
         false
       };
     default:
