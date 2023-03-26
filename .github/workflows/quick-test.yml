@@ -11,20 +11,35 @@ on:
 
 jobs:
   Linux-musl:
-    runs-on: ubuntu-latest
-    container: alpine:latest
+    runs-on: ubuntu-20.04
+    container: alpine:3.16.3
     steps:
       - uses: actions/checkout@v2
       - name: install dependencies
         run: apk add autoconf automake bash build-base cmake libtool libucontext-dev linux-headers openssl-dev
       - name: super-test
         run: ./super-test.sh quick
+  Linux-old:
+    runs-on: ubuntu-20.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [g++-7, clang-6.0]
+    steps:
+      - uses: actions/checkout@v2
+      - name: install dependencies
+        run: |
+            export DEBIAN_FRONTEND=noninteractive
+            sudo apt-get install -y build-essential git zlib1g-dev cmake libssl-dev ${{ matrix.compiler }}
+      - name: super-test
+        run: |
+            ./super-test.sh quick ${{ matrix.compiler }}
   Linux:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        compiler: [g++-7, g++-10, clang-6.0, clang-10]
+        compiler: [g++-12, clang-14]
     steps:
       - uses: actions/checkout@v2
       - name: install dependencies
@@ -35,7 +50,7 @@ jobs:
         run: |
             ./super-test.sh quick ${{ matrix.compiler }}
   Linux-lock-tracking:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
       matrix:
@@ -52,7 +67,7 @@ jobs:
             # librt is used for timer_create in the unit tests for lock tracking (mutex-test.c++).
             ./super-test.sh quick ${{ matrix.compiler }} cpp-features "${{matrix.features}}" extra-libs "-lrt"
   ManyLinux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
       matrix:
@@ -165,7 +180,7 @@ jobs:
   #       run: |
   #         C:\tools\cygwin\bin\bash -lc 'export PATH=/usr/local/bin:/usr/bin:/bin; cd /cygdrive/d/a/capnproto/capnproto; ./super-test.sh quick'
   Linux-bazel:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     strategy:
       fail-fast: false
       matrix:

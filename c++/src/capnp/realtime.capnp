@@ -38,7 +38,7 @@ struct RealtimeResult @0xf1e925c2b9cb4a21 {
   #     write @0 (bytes :Data) -> import "/capnp/realtime.capnp".RealtimeResult;
   #
   # However, implementations that recognize realtime streaming will elide the reference to
-  # StreamResult and instead give write() a different signature appropriate for realtime
+  # RealtimeResult and instead give write() a different signature appropriate for realtime
   # streaming.
   #
   # Realtime streaming methods do not return a result -- that is, they return Promise<void>.

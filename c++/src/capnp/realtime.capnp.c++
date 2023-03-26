@@ -29,7 +29,7 @@ static const ::capnp::_::AlignedData<18> b_f1e925c2b9cb4a21 = {
 #if !CAPNP_LITE
 const ::capnp::_::RawSchema s_f1e925c2b9cb4a21 = {
   0xf1e925c2b9cb4a21, b_f1e925c2b9cb4a21.words, 18, nullptr, nullptr,
-  0, 0, nullptr, nullptr, nullptr, { &s_f1e925c2b9cb4a21, nullptr, nullptr, 0, 0, nullptr }
+  0, 0, nullptr, nullptr, nullptr, { &s_f1e925c2b9cb4a21, nullptr, nullptr, 0, 0, nullptr }, false
 };
 #endif  // !CAPNP_LITE
 }  // namespace schemas

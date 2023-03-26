@@ -65,6 +65,7 @@ namespace {
 
 static constexpr uint64_t NAMESPACE_ANNOTATION_ID = 0xb9c6f99ebf805f2cull;
 static constexpr uint64_t NAME_ANNOTATION_ID = 0xf264a779fef191ceull;
+static constexpr uint64_t ALLOW_CANCELLATION_ANNOTATION_ID = 0xac7096ff8cfc9dceull;
 
 bool hasDiscriminantValue(const schema::Field::Reader& reader) {
   return reader.getDiscriminantValue() != schema::Field::NO_DISCRIMINANT;
@@ -2160,20 +2161,8 @@ private:
     auto paramProto = paramSchema.getProto();
     auto resultProto = resultSchema.getProto();
 
-    enum class ReturnType {
-      RESULT,
-      STREAMING,
-      REALTIME
-    };
-
-    ReturnType returnType;
-    if (method.isRealtimeStreaming()) {
-      returnType = ReturnType::REALTIME;
-    } else if (method.isStreaming()) {
-      returnType = ReturnType::STREAMING;
-    } else {
-      returnType = ReturnType::RESULT;
-    }
+    bool isStreaming = method.isStreaming() || method.isRealtimeStreaming();
+    bool isRealtime = method.isRealtimeStreaming();
 
     auto implicitParamsReader = proto.getImplicitParameters();
     auto implicitParamsBuilder = kj::heapArrayBuilder<CppTypeName>(implicitParamsReader.size());
@@ -2211,7 +2200,7 @@ private:
     }
     CppTypeName resultType;
     CppTypeName genericResultType;
-    if (returnType == ReturnType::STREAMING || returnType == ReturnType::REALTIME) {
+    if (isStreaming || isRealtime) {
       // We don't use resultType or genericResultType in this case. We want to avoid computing them
       // at all so that we don't end up marking stream.capnp.h or realtime.capnp.h in usedImports.
     } else if (resultProto.getScopeId() == 0) {
@@ -2232,24 +2221,13 @@ private:
 
     kj::String shortParamType = paramProto.getScopeId() == 0 ?
         kj::str(titleCase, "Params") : kj::str(genericParamType);
-    kj::String shortResultType = (resultProto.getScopeId() == 0
-                                  || returnType == ReturnType::STREAMING
-                                  || returnType == ReturnType::REALTIME) ?
+    kj::String shortResultType = resultProto.getScopeId() == 0 || isStreaming || isRealtime ?
         kj::str(titleCase, "Results") : kj::str(genericResultType);
 
     auto interfaceProto = method.getContainingInterface().getProto();
     uint64_t interfaceId = interfaceProto.getId();
     auto interfaceIdHex = kj::hex(interfaceId);
     uint16_t methodId = method.getIndex();
-
-    kj::StringTree requestMethodImplReturnType;
-    if (returnType == ReturnType::STREAMING) {
-      requestMethodImplReturnType = kj::strTree("::capnp::StreamingRequest<", paramType, ">");
-    } else if (returnType == ReturnType::REALTIME) {
-      requestMethodImplReturnType = kj::strTree("::capnp::RealtimeRequest<", paramType, ">");
-    } else {
-      requestMethodImplReturnType = kj::strTree("::capnp::Request<", paramType, ", ", resultType, ">");
-    }
 
     // TODO(msvc):  Notice that the return type of this method's request function is supposed to be
     // `::capnp::Request<param, result>`. If the first template parameter to ::capnp::Request is a
@@ -2260,79 +2238,53 @@ private:
     // The easiest (and only) workaround I found is to use C++14's return type deduction here, thus
     // the `CAPNP_AUTO_IF_MSVC()` hackery in the return type declarations below. We're depending on
     // the fact that that this function has an inline implementation for the deduction to work.
-    if (templateContext.isGeneric()) {
-      requestMethodImplReturnType = kj::strTree("CAPNP_AUTO_IF_MSVC(",
-                                                kj::mv(requestMethodImplReturnType), ")");
-    }
 
-    auto requestMethodImplReturnType2 = kj::strTree("  ", requestMethodImplReturnType.flatten());
-
-    kj::StringTree returnCall;
-    if (returnType == ReturnType::STREAMING) {
-      returnCall = kj::strTree("  return newStreamingCall<", paramType, ">(\n");
-    } else if (returnType == ReturnType::REALTIME) {
-      returnCall = kj::strTree("  return newRealtimeCall<", paramType, ">(\n");
-    } else {
-      returnCall = kj::strTree("  return newCall<", paramType, ", ", resultType, ">(\n");
-    }
+    bool noPromisePipelining = !resultSchema.mayContainCapabilities();
 
     auto requestMethodImpl = kj::strTree(
         templateContext.allDecls(),
-        implicitParamsTemplateDecl, "\n",
-        kj::mv(requestMethodImplReturnType),
+        implicitParamsTemplateDecl,
+        templateContext.isGeneric() ? "CAPNP_AUTO_IF_MSVC(" : "",
+        isStreaming
+          ? isRealtime
+            ? kj::strTree("::capnp::RealtimeRequest<", paramType, ">")
+            : kj::strTree("::capnp::StreamingRequest<", paramType, ">")
+          : kj::strTree("::capnp::Request<", paramType, ", ", resultType, ">"),
+        templateContext.isGeneric() ? ")\n" : "\n",
         interfaceName, "::Client::", name, "Request(::kj::Maybe< ::capnp::MessageSize> sizeHint) {\n",
-        kj::mv(returnCall),
-        "      0x", interfaceIdHex, "ull, ", methodId, ", sizeHint);\n"
+        isStreaming
+          ? isRealtime
+            ? kj::strTree("  return newRealtimeCall<", paramType, ">(\n")
+            : kj::strTree("  return newStreamingCall<", paramType, ">(\n")
+          : kj::strTree("  return newCall<", paramType, ", ", resultType, ">(\n"),
+        "      0x", interfaceIdHex, "ull, ", methodId, ", sizeHint, {", noPromisePipelining, "});\n"
         "}\n");
 
-    kj::StringTree typedefCallContext;
-    if (returnType == ReturnType::STREAMING) {
-      typedefCallContext = kj::strTree("  typedef ::capnp::StreamingCallContext<", shortParamType, "> ");
-    } else if (returnType == ReturnType::REALTIME) {
-      typedefCallContext = kj::strTree("  typedef ::capnp::RealtimeCallContext<", shortParamType, "> ");
+    bool allowCancellation = false;
+    if (annotationValue(proto, ALLOW_CANCELLATION_ANNOTATION_ID) != nullptr) {
+      allowCancellation = true;
+    } else if (annotationValue(interfaceProto, ALLOW_CANCELLATION_ANNOTATION_ID) != nullptr) {
+      allowCancellation = true;
     } else {
-      typedefCallContext = kj::strTree("  typedef ::capnp::CallContext<", shortParamType, ", ", shortResultType, "> ");
-    }
-
-    kj::StringTree dispatchCallCase;
-    if (returnType == ReturnType::STREAMING) {
-      // For streaming calls, we need to add an evalNow() here so that exceptions thrown
-      // directly from the call can propagate to later calls. If we don't capture the
-      // exception properly then the caller will never find out that this is a streaming
-      // call (indicated by the boolean in the return value) so won't know to propagate
-      // the exception.
-      dispatchCallCase = kj::strTree(
-          "      return {\n"
-          "        kj::evalNow([&]() {\n"
-          "          return ", identifierName, "(::capnp::Capability::Server::internalGetTypedStreamingContext<\n"
-          "              ", genericParamType, ">(context));\n"
-          "        }),\n"
-          "        true\n"
-          "      };\n");
-    } else if (returnType == ReturnType::REALTIME) {
-      dispatchCallCase = kj::strTree(
-          "      return {\n"
-          "        kj::evalNow([&]() {\n"
-          "          return ", identifierName, "(::capnp::Capability::Server::internalGetTypedRealtimeContext<\n"
-          "              ", genericParamType, ">(context));\n"
-          "        }),\n"
-          "        true\n"
-          "      };\n");
-    } else {
-      dispatchCallCase = kj::strTree(
-          // For non-streaming calls we let exceptions just flow through for a little more
-          // efficiency.
-          "      return {\n"
-          "        ", identifierName, "(::capnp::Capability::Server::internalGetTypedContext<\n"
-          "            ", genericParamType, ", ", genericResultType, ">(context)),\n"
-          "        false\n"
-          "      };\n");
+      schema::Node::Reader node = interfaceProto;
+      while (!node.isFile()) {
+        node = schemaLoader.get(node.getScopeId()).getProto();
+      }
+      if (annotationValue(node, ALLOW_CANCELLATION_ANNOTATION_ID) != nullptr) {
+        allowCancellation = true;
+      }
     }
 
     return MethodText {
       kj::strTree(
           implicitParamsTemplateDecl.size() == 0 ? "" : "  ", implicitParamsTemplateDecl,
-          kj::mv(requestMethodImplReturnType2),
+          templateContext.isGeneric() ? "  CAPNP_AUTO_IF_MSVC(" : "  ",
+          isStreaming
+            ? isRealtime
+              ? kj::strTree("::capnp::RealtimeRequest<", paramType, ">")
+              : kj::strTree("::capnp::StreamingRequest<", paramType, ">")
+            : kj::strTree("::capnp::Request<", paramType, ", ", resultType, ">"),
+          templateContext.isGeneric() ? ")" : "",
           " ", name, "Request(\n"
           "      ::kj::Maybe< ::capnp::MessageSize> sizeHint = nullptr);\n"),
 
@@ -2341,8 +2293,13 @@ private:
               "  typedef ", genericParamType, " ", titleCase, "Params;\n"),
           resultProto.getScopeId() != 0 ? kj::strTree() : kj::strTree(
               "  typedef ", genericResultType, " ", titleCase, "Results;\n"),
-          kj::mv(typedefCallContext),
-          titleCase, "Context;\n",
+          isStreaming
+            ? isRealtime
+              ? kj::strTree("  typedef ::capnp::RealtimeCallContext<", shortParamType, "> ")
+              : kj::strTree("  typedef ::capnp::StreamingCallContext<", shortParamType, "> ")
+            : kj::strTree(
+              "  typedef ::capnp::CallContext<", shortParamType, ", ", shortResultType, "> "),
+          titleCase, "Context;\n"
           "  virtual ::kj::Promise<void> ", identifierName, "(", titleCase, "Context context);\n"),
 
       implicitParams.size() == 0 ? kj::strTree() : kj::mv(requestMethodImpl),
@@ -2358,7 +2315,40 @@ private:
 
       kj::strTree(
           "    case ", methodId, ":\n",
-          kj::mv(dispatchCallCase))
+          isStreaming
+          // For streaming calls, we need to add an evalNow() here so that exceptions thrown
+          // directly from the call can propagate to later calls. If we don't capture the
+          // exception properly then the caller will never find out that this is a streaming
+          // call (indicated by the boolean in the return value) so won't know to propagate
+          // the exception.
+            ? isRealtime
+              ? kj::strTree(
+                "      return {\n"
+                "        kj::evalNow([&]() {\n"
+                "          return ", identifierName, "(::capnp::Capability::Server::internalGetTypedRealtimeContext<\n"
+                "              ", genericParamType, ">(context));\n"
+                "        }),\n"
+                "        true,\n"
+                "        ", allowCancellation, "\n"
+                "      };\n")
+              : kj::strTree(
+                "      return {\n"
+                "        kj::evalNow([&]() {\n"
+                "          return ", identifierName, "(::capnp::Capability::Server::internalGetTypedStreamingContext<\n"
+                "              ", genericParamType, ">(context));\n"
+                "        }),\n"
+                "        true,\n"
+                "        ", allowCancellation, "\n"
+                "      };\n")
+            : kj::strTree(
+              // For non-streaming calls we let exceptions just flow through for a little more
+              // efficiency.
+              "      return {\n"
+              "        ", identifierName, "(::capnp::Capability::Server::internalGetTypedContext<\n"
+              "            ", genericParamType, ", ", genericResultType, ">(context)),\n"
+              "        false,\n"
+              "        ", allowCancellation, "\n"
+              "      };\n"))
     };
   }
 
@@ -2823,6 +2813,8 @@ private:
     auto brandDeps = makeBrandDepInitializers(
         makeBrandDepMap(templateContext, schema.getGeneric()));
 
+    bool mayContainCapabilities = proto.isStruct() && schema.asStruct().mayContainCapabilities();
+
     auto schemaDef = kj::strTree(
         "static const ::capnp::_::AlignedData<", rawSchema.size(), "> b_", hexId, " = {\n"
         "  {", kj::mv(schemaLiteral), " }\n"
@@ -2855,7 +2847,7 @@ private:
         ", nullptr, nullptr, { &s_", hexId, ", nullptr, ",
         brandDeps.size() == 0 ? kj::strTree("nullptr, 0, 0") : kj::strTree(
             "bd_", hexId, ", 0, " "sizeof(bd_", hexId, ") / sizeof(bd_", hexId, "[0])"),
-        ", nullptr }\n"
+        ", nullptr }, ", mayContainCapabilities, "\n"
         "};\n"
         "#endif  // !CAPNP_LITE\n");
 
@@ -3094,7 +3086,9 @@ private:
             "#endif  // !CAPNP_LITE\n"
           ) : kj::strTree(),
           "\n"
-          "#if CAPNP_VERSION != ", CAPNP_VERSION, "\n"
+          "#ifndef CAPNP_VERSION\n"
+          "#error \"CAPNP_VERSION is not defined, is capnp/generated-header-support.h missing?\"\n"
+          "#elif CAPNP_VERSION != ", CAPNP_VERSION, "\n"
           "#error \"Version mismatch between generated code and library headers.  You must "
               "use the same version of the Cap'n Proto compiler and library.\"\n"
           "#endif\n"
@@ -3203,6 +3197,8 @@ private:
     for (auto node: request.getNodes()) {
       schemaLoader.load(node);
     }
+
+    schemaLoader.computeOptimizationHints();
 
     for (auto requestedFile: request.getRequestedFiles()) {
       auto schema = schemaLoader.get(requestedFile.getId());

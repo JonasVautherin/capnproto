@@ -66,14 +66,18 @@ TwoPartyVatNetwork::TwoPartyVatNetwork(
 TwoPartyVatNetwork::TwoPartyVatNetwork(kj::AsyncIoStream& stream, rpc::twoparty::Side side,
                                        ReaderOptions receiveOptions,
                                        const kj::MonotonicClock& clock)
-    : TwoPartyVatNetwork(kj::Own<MessageStream>(kj::heap<AsyncIoMessageStream>(stream)),
-                         0, side, receiveOptions, clock) {}
+    : TwoPartyVatNetwork(
+          kj::Own<MessageStream>(kj::heap<BufferedMessageStream>(
+              stream, IncomingRpcMessage::getShortLivedCallback())),
+          0, side, receiveOptions, clock) {}
 
 TwoPartyVatNetwork::TwoPartyVatNetwork(kj::AsyncCapabilityStream& stream, uint maxFdsPerMessage,
                                        rpc::twoparty::Side side, ReaderOptions receiveOptions,
                                        const kj::MonotonicClock& clock)
-    : TwoPartyVatNetwork(kj::Own<MessageStream>(kj::heap<AsyncCapabilityMessageStream>(stream)),
-                         maxFdsPerMessage, side, receiveOptions, clock) {}
+    : TwoPartyVatNetwork(
+          kj::Own<MessageStream>(kj::heap<BufferedMessageStream>(
+              stream, IncomingRpcMessage::getShortLivedCallback())),
+          maxFdsPerMessage, side, receiveOptions, clock) {}
 
 TwoPartyVatNetwork::~TwoPartyVatNetwork() noexcept(false) {};
 
