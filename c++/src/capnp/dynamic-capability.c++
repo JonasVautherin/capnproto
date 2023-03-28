@@ -66,7 +66,7 @@ Capability::Server::DispatchCallResult DynamicCapability::Server::dispatchCall(
       return {
         call(method, CallContext<DynamicStruct, DynamicStruct>(*context.hook,
             method.getParamType(), resultType)),
-        resultType.isStreamResult() || resultType.isRealtimeResult(),
+        resultType.isStreamResult(),
         options.allowCancellation
       };
     } else {

@@ -2015,8 +2015,7 @@ private:
           flow = target->flowController.emplace(
               connectionState->connection.get<Connected>()->newStream());
         }
-        flowPromise =
-            flow->send(kj::mv(message), setup.promise.ignoreResult());
+        flowPromise = flow->send(kj::mv(message), setup.promise.ignoreResult());
       })) {
         // We can't safely throw the exception from here since we've already modified the question
         // table state. We'll have to reject the promise instead.
@@ -2332,7 +2331,7 @@ private:
                    kj::Array<kj::Maybe<kj::Own<ClientHook>>> capTableArray,
                    const AnyPointer::Reader& params,
                    bool redirectResults, uint64_t interfaceId, uint16_t methodId,
-                   ClientHook::CallHints hints, bool realtime = false)
+                   ClientHook::CallHints hints)
         : connectionState(kj::addRef(connectionState)),
           answerId(answerId),
           hints(hints),
@@ -2343,8 +2342,7 @@ private:
           paramsCapTable(kj::mv(capTableArray)),
           params(paramsCapTable.imbue(params)),
           returnMessage(nullptr),
-          redirectResults(redirectResults),
-          realtime(realtime) {
+          redirectResults(redirectResults) {
       connectionState.callWordsInFlight += requestSize;
     }
 
@@ -2356,7 +2354,7 @@ private:
           // was used or if it is a realtime call (in which case the caller doesn't care to
           // receive a `Return`).
           bool shouldFreePipeline = true;
-          if (!realtime && connectionState->connection.is<Connected>() && !hints.onlyPromisePipeline) {
+          if (connectionState->connection.is<Connected>() && !hints.onlyPromisePipeline && !hints.isRealtime) {
             auto message = connectionState->connection.get<Connected>()->newOutgoingMessage(
                 messageSizeHint<rpc::Return>() + sizeInWords<rpc::Payload>());
             auto builder = message->getBody().initAs<rpc::Message>().initReturn();
@@ -2365,8 +2363,7 @@ private:
             builder.setReleaseParamCaps(false);
 
             if (redirectResults) {
-              // The reason we haven't sent a return is because the results were sent somewhere
-              // else.
+              // The reason we haven't sent a return is that the results were sent somewhere else.
               builder.setResultsSentElsewhere();
 
               // The pipeline could still be valid and in-use in this case.
@@ -2632,7 +2629,6 @@ private:
     rpc::Return::Builder returnMessage;
     bool redirectResults = false;
     bool responseSent = false;
-    bool realtime = false;
     kj::Maybe<kj::Own<kj::PromiseFulfiller<AnyPointer::Pipeline>>> tailCallPipelineFulfiller;
 
     // Cancellation state ----------------------------------
@@ -2957,9 +2953,16 @@ private:
     // useful in practice and would be complicated to handle "correctly".
     if (redirectResults) hints.onlyPromisePipeline = false;
 
+    // TODO: what if hints.isRealtime != call.getIsRealtime?
+    // The former comes from the generated code, and the latter from the message.
+    // So if the hint is set to realtime but the caller is not, it means that
+    // the caller doesn't know/understand that it should be realtime. Therefore
+    // I think we should ignore that it is realtime in that case.
+    if (hints.isRealtime && !call.getIsRealtime()) hints.isRealtime = false;
+
     auto context = kj::refcounted<RpcCallContext>(
         *this, answerId, kj::mv(message), kj::mv(capTableArray), payload.getContent(),
-        redirectResults, call.getInterfaceId(), call.getMethodId(), hints, call.getIsRealtime());
+        redirectResults, call.getInterfaceId(), call.getMethodId(), hints);
 
     // No more using `call` after this point, as it now belongs to the context.
 

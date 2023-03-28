@@ -535,8 +535,8 @@ public:
   bool isStreaming() const { return getResultType().isStreamResult(); }
   // Check if this is a streaming method.
 
-  bool isRealtimeStreaming() const { return getResultType().isRealtimeResult(); }
-  // Check if this is a realtime streaming method.
+  bool isRealtime() const { return getResultType().isRealtimeResult(); }
+  // Check if this is a realtime method.
 
   StructSchema getParamType() const;
   StructSchema getResultType() const;

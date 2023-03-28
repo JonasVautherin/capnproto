@@ -525,7 +525,8 @@ kj::Maybe<StructSchema::Field> StructSchema::getFieldByDiscriminant(uint16_t dis
 
 bool StructSchema::isStreamResult() const {
   auto& streamRaw = _::rawSchema<StreamResult>();
-  return raw->generic == &streamRaw || raw->generic->canCastTo == &streamRaw;
+  bool isStream = raw->generic == &streamRaw || raw->generic->canCastTo == &streamRaw;
+  return isStream || isRealtimeResult();
 }
 
 bool StructSchema::isRealtimeResult() const {

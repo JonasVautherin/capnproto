@@ -566,7 +566,7 @@ public:
 
   kj::Promise<void> sendRealtime();
   // Use when the caller is aware that the response type is RealtimeResult and wants to invoke
-  // realtime behavior. It is an error to call this if the response type is not StreamResult.
+  // realtime behavior. It is an error to call this if the response type is not RealtimeResult.
 
 private:
   kj::Own<RequestHook> hook;
