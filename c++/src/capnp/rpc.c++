@@ -170,6 +170,7 @@ ClientHook::CallHints callHintsFromReader(rpc::Call::Reader reader) {
   ClientHook::CallHints hints;
   hints.noPromisePipelining = reader.getNoPromisePipelining();
   hints.onlyPromisePipeline = reader.getOnlyPromisePipeline();
+  hints.isRealtime = reader.getIsRealtime();
   return hints;
 }
 
@@ -180,6 +181,11 @@ static constexpr Id highBit() {
   return 1u << (sizeof(Id) * 8 - 1);
 }
 
+template <typename Id>
+static constexpr Id lowBit() {
+  return 1;
+}
+
 template <typename Id, typename T>
 class ExportTable {
   // Table mapping integers to T, where the integers are chosen locally.
@@ -187,6 +193,10 @@ class ExportTable {
 public:
   bool isHigh(Id& id) {
     return (id & highBit<Id>()) != 0;
+  }
+
+  bool isLow(Id& id) {
+    return (id & lowBit<Id>()) != 0;
   }
 
   kj::Maybe<T&> find(Id id) {
@@ -230,7 +240,7 @@ public:
     }
   }
 
-  T& nextHigh(Id& id) {
+  T& nextHigh(Id& id, bool setLowBit) {
     // Choose an ID with the top bit set in round-robin fashion, but don't choose an ID that
     // is still in use.
 
@@ -239,7 +249,13 @@ public:
     bool created = false;
     T* slot;
     while (!created) {
-      id = highCounter++ | highBit<Id>();
+      highCounter += 2; // the high ID space is split in two, based on the low bit
+      id = highCounter | highBit<Id>();
+
+      if (setLowBit) {
+        id = id | lowBit<Id>();
+      }
+
       slot = &highSlots.findOrCreate(id, [&]() {
         created = true;
         return typename kj::HashMap<Id, T>::Entry { id, T() };
@@ -329,26 +345,6 @@ public:
 private:
   T low[16];
   std::unordered_map<Id, T> high;
-};
-
-template <typename Id>
-class RealtimeIdGenerator {
-  // Realtime messages need a unique QuestionId, even though the question is not
-  // saved by the caller.  The strategy here is to give a rolling id in the range
-  // [2^31, 2^32 - 1), assuming that when all the ids of the range have been used,
-  // the first ones are available again.
-
-public:
-  Id next() {
-    if (id == std::numeric_limits<Id>::max()) {
-      id = 1 << 31;
-    }
-
-    return id++;
-  }
-
-private:
-  Id id = 1 << 31;
 };
 
 // =======================================================================================
@@ -700,10 +696,6 @@ private:
   // The Four Tables!
   // The order of the tables is important for correct destruction.
 
-  RealtimeIdGenerator<QuestionId> realtimeIdGenerator;
-  // Realtime messages need a unique QuestionId even though the caller does not
-  // maintain the full question state.
-
   std::unordered_map<ClientHook*, ExportId> exportsByCap;
   // Maps already-exported ClientHook objects to their ID in the export table.
 
@@ -725,7 +717,7 @@ private:
   bool gotReturnForHighQuestionId = false;
   // Becomes true if we ever get a `Return` message for a high question ID (with top bit set),
   // which we use in cases where we've hinted to the peer that we don't want a `Return`. If the
-  // peer sends us one anyway then it seemingly doesn't not implement our hints. We need to stop
+  // peer sends us one anyway then it seemingly does not implement our hints. We need to stop
   // using the hints in this case before the high question ID space wraps around since otherwise
   // we might reuse an ID that the peer thinks is still in use.
 
@@ -2036,8 +2028,10 @@ private:
       message->setFds(fds.releaseAsArray());
 
       // Finish and send.
+      QuestionId questionId;
+      connectionState->questions.nextHigh(questionId, true);
+      callBuilder.setQuestionId(questionId);
       callBuilder.setIsRealtime(true);
-      callBuilder.setQuestionId(connectionState->realtimeIdGenerator.next());
       if (isTailCall) {
         callBuilder.getSendResultsTo().setYourself();
       }
@@ -2068,12 +2062,12 @@ private:
 
       // Init the question table.  Do this after writing descriptors to avoid interference.
       QuestionId questionId;
-      auto& question = connectionState->questions.nextHigh(questionId);
+      auto& question = connectionState->questions.nextHigh(questionId, false);
       question.isAwaitingReturn = false;  // No Return needed
       question.paramExports = kj::mv(exports);
       question.isTailCall = false;
 
-      // Make the QuentionRef and result promise.
+      // Make the QuestionRef and result promise.
       auto questionRef = kj::refcounted<QuestionRef>(*connectionState, questionId, nullptr);
       question.selfRef = *questionRef;
 
@@ -2953,13 +2947,6 @@ private:
     // useful in practice and would be complicated to handle "correctly".
     if (redirectResults) hints.onlyPromisePipeline = false;
 
-    // TODO: what if hints.isRealtime != call.getIsRealtime?
-    // The former comes from the generated code, and the latter from the message.
-    // So if the hint is set to realtime but the caller is not, it means that
-    // the caller doesn't know/understand that it should be realtime. Therefore
-    // I think we should ignore that it is realtime in that case.
-    if (hints.isRealtime && !call.getIsRealtime()) hints.isRealtime = false;
-
     auto context = kj::refcounted<RpcCallContext>(
         *this, answerId, kj::mv(message), kj::mv(capTableArray), payload.getContent(),
         redirectResults, call.getInterfaceId(), call.getMethodId(), hints);
@@ -3093,6 +3080,19 @@ private:
       // that we already removed it and re-allocated the ID to something else. So, we should ignore
       // the `Return`. But we might want to make note to stop using these hints, to protect against
       // the (again, remote) possibility of our ID space wrapping around and leading to confusion.
+      if (questions.isLow(questionId)) {
+        // The low bit of the questionId is set, meaning that it is a realtime message. In this case,
+        // we must send a Finish message.
+        KJ_IF_MAYBE(e, kj::runCatchingExceptions([&]() {
+                      auto message = connection.get<Connected>()->newOutgoingMessage(
+                          messageSizeHint<rpc::Finish>());
+                      auto builder = message->getBody().getAs<rpc::Message>().initFinish();
+                      builder.setQuestionId(questionId);
+                      message->send();
+                    })) {
+          disconnect(kj::mv(*e));
+        }
+      }
       if (ret.getReleaseParamCaps() && sentCapabilitiesInPipelineOnlyCall) {
         // Oh no, it appears the peer wants us to release any capabilities in the params, something
         // which only a level 0 peer would request (no version of the C++ RPC system has ever done
@@ -3222,25 +3222,7 @@ private:
         questions.erase(ret.getAnswerId(), *question);
       }
     } else {
-      auto questionId = ret.getAnswerId();
-      if (questionId >= 1 << 31) {
-        // The question was not found in the question table, and its id is in
-        // the range [2^31, 2^32): it is a `Return` for a realtime `Call`,
-        // but the callee does not support realtime messages.  Therefore, we
-        // just send a `Finish` message.
-
-        KJ_IF_MAYBE(e, kj::runCatchingExceptions([&]() {
-          auto message = connection.get<Connected>()->newOutgoingMessage(
-              messageSizeHint<rpc::Finish>());
-          auto builder = message->getBody().getAs<rpc::Message>().initFinish();
-          builder.setQuestionId(questionId);
-          message->send();
-        })) {
-          disconnect(kj::mv(*e));
-        }
-      } else {
-        KJ_FAIL_REQUIRE("Invalid question ID in Return message.") { return; }
-      }
+      KJ_FAIL_REQUIRE("Invalid question ID in Return message.") { return; }
     }
   }
 

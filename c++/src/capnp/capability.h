@@ -260,8 +260,7 @@ public:
 
     bool isRealtime = false;
     // Hints that the call is a "realtime" call, meaning that it does not expect a response (i.e.
-    // a `Return` message), meaning that as far as the caller is concerned, the message may be
-    // dropped.
+    // a `Return` message). As far as the caller is concerned, the message may be dropped.
   };
 
   Request<AnyPointer, AnyPointer> typelessRequest(
