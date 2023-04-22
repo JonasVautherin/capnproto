@@ -243,11 +243,6 @@ public:
     return sendImpl(isStreaming).ignoreResult();
   }
 
-  kj::Promise<void> sendRealtime() override {
-    bool isStreaming = true;
-    return sendImpl(isStreaming).ignoreResult();
-  }
-
   AnyPointer::Pipeline sendForPipeline() override {
     KJ_REQUIRE(message.get() != nullptr, "Already called send() on this request.");
 
@@ -945,10 +940,6 @@ public:
   }
 
   kj::Promise<void> sendStreaming() override {
-    return kj::cp(exception);
-  }
-
-  kj::Promise<void> sendRealtime() override {
     return kj::cp(exception);
   }
 

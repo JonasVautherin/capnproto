@@ -231,18 +231,6 @@ public:
     return promise;
   }
 
-  kj::Promise<void> sendRealtime() override {
-    auto promise = inner->sendRealtime();
-
-    KJ_IF_MAYBE(r, policy->onRevoked()) {
-      promise = promise.exclusiveJoin(r->then([]() {
-        KJ_FAIL_REQUIRE("onRevoked() promise resolved; it should only reject");
-      }));
-    }
-
-    return promise;
-  }
-
   AnyPointer::Pipeline sendForPipeline() override {
     return AnyPointer::Pipeline(kj::refcounted<MembranePipelineHook>(
         PipelineHook::from(inner->sendForPipeline()), policy->addRef(), reverse));

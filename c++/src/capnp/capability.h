@@ -690,9 +690,6 @@ public:
   virtual kj::Promise<void> sendStreaming() = 0;
   // Send a streaming call.
 
-  virtual kj::Promise<void> sendRealtime() = 0;
-  // Send a realtime call.
-
   virtual AnyPointer::Pipeline sendForPipeline() = 0;
   // Send a call for pipelining purposes only.
 

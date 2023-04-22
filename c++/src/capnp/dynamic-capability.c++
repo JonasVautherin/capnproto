@@ -107,12 +107,4 @@ kj::Promise<void> Request<DynamicStruct, DynamicStruct>::sendStreaming() {
   return promise;
 }
 
-kj::Promise<void> Request<DynamicStruct, DynamicStruct>::sendRealtime() {
-  KJ_REQUIRE(resultSchema.isRealtimeResult());
-
-  auto promise = hook->sendRealtime();
-  hook = nullptr;  // prevent reuse
-  return promise;
-}
-
 }  // namespace capnp

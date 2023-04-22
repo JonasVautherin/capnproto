@@ -1811,27 +1811,11 @@ private:
         replacement.set(paramsBuilder);
         return RequestHook::from(kj::mv(replacement))->sendStreaming();
       } else {
-        return sendStreamingInternal(false);
-      }
-    }
-
-    kj::Promise<void> sendRealtime() override {
-      if (!connectionState->connection.is<Connected>()) {
-        // Connection is broken.
-        return kj::cp(connectionState->connection.get<Disconnected>());
-      }
-
-      KJ_IF_MAYBE(redirect, target->writeTarget(callBuilder.getTarget())) {
-        // Whoops, this capability has been redirected while we were building the request!
-        // We'll have to make a new request and do a copy.  Ick.
-
-        auto replacement = redirect->get()->newCall(
-            callBuilder.getInterfaceId(), callBuilder.getMethodId(), paramsBuilder.targetSize(),
-            callHintsFromReader(callBuilder));
-        replacement.set(paramsBuilder);
-        return RequestHook::from(kj::mv(replacement))->sendRealtime();
-      } else {
-        return sendRealtimeInternal(false);
+        if (callBuilder.getIsRealtime()) {
+          return sendRealtimeInternal(false);
+        } else {
+          return sendStreamingInternal(false);
+        }
       }
     }
 
