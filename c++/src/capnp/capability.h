@@ -478,9 +478,9 @@ public:
     // Promise for completion of the call.
 
     bool isStreaming;
-    // If true, this method was declared as `-> [realtime] stream;`. No other calls should be
-    // permitted until this call finishes, and if this call throws an exception, all future
-    // calls will throw the same exception.
+    // If true, this method was declared as `-> stream;`. No other calls should be permitted until
+    // this call finishes, and if this call throws an exception, all future calls will throw the
+    // same exception.
 
     bool allowCancellation = false;
     // If true, the call can be canceled normally. If false, the immediate caller is responsible
