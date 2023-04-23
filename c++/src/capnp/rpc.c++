@@ -806,6 +806,7 @@ private:
       callBuilder.setMethodId(methodId);
       callBuilder.setNoPromisePipelining(hints.noPromisePipelining);
       callBuilder.setOnlyPromisePipeline(hints.onlyPromisePipeline);
+      callBuilder.setIsRealtime(hints.isRealtime);
 
       auto root = request->getRoot();
       return Request<AnyPointer, AnyPointer>(root, kj::mv(request));
