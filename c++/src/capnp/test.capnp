@@ -842,13 +842,6 @@ interface TestStreaming $Cxx.allowCancellation {
   # Test streaming. finishStream() returns the totals of the values streamed to the other calls.
 }
 
-interface TestRealtimeStreaming {
-  doRealtimeStreamI @0 (i :UInt32) -> stream $Cxx.realtime;
-  doRealtimeStreamJ @1 (j: UInt32) -> stream $Cxx.realtime;
-  finishRealtimeStream @2 () -> (totalI :UInt32, totalJ :UInt32);
-  # Test realtime streaming. finishRealtimeStream() returns the totals of the values streamed to the other calls.
-}
-
 interface TestHandle {}
 
 interface TestMoreStuff extends(TestCallOrder) {
