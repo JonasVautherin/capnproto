@@ -11,7 +11,6 @@ cc_library(
         "layout.c++",
         "list.c++",
         "message.c++",
-        "realtime.capnp.c++",
         "schema.c++",
         "schema.capnp.c++",
         "schema-loader.c++",
@@ -38,7 +37,6 @@ cc_library(
         "pointer-helpers.h",
         "pretty-print.h",
         "raw-schema.h",
-        "realtime.capnp.h",
         "schema.capnp.h",
         "schema.h",
         "schema-lite.h",
@@ -164,7 +162,6 @@ filegroup(
     name = "capnp_system_library",
     srcs = [
         "c++.capnp",
-        "realtime.capnp",
         "schema.capnp",
         "stream.capnp",
         "//src/capnp/compat:json.capnp",
@@ -197,7 +194,6 @@ cc_capnp_library(
     ],
     data = [
         "c++.capnp",
-        "realtime.capnp",
         "schema.capnp",
         "stream.capnp",
         ":testdata",

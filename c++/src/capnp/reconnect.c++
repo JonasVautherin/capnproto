@@ -134,12 +134,6 @@ private:
       return result;
     }
 
-    kj::Promise<void> sendRealtime() override {
-      auto result = inner->sendRealtime();
-      parent->wrap(result);
-      return result;
-    }
-
     AnyPointer::Pipeline sendForPipeline() override {
       // TODO(bug): This definitely fails to detect disconnects; see comment in send().
       return inner->sendForPipeline();

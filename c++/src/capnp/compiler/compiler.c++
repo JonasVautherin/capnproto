@@ -1073,9 +1073,6 @@ static void findImports(Declaration::ParamList::Reader paramList, std::set<kj::S
     case Declaration::ParamList::STREAM:
       output.insert("/capnp/stream.capnp");
       break;
-    case Declaration::ParamList::REALTIME_STREAM:
-      output.insert("/capnp/realtime.capnp");
-      break;
   }
 }
 

@@ -23,7 +23,6 @@
 #include "message.h"
 #include <kj/debug.h>
 #include <capnp/stream.capnp.h>
-#include <capnp/realtime.capnp.h>
 
 namespace capnp {
 
@@ -525,13 +524,7 @@ kj::Maybe<StructSchema::Field> StructSchema::getFieldByDiscriminant(uint16_t dis
 
 bool StructSchema::isStreamResult() const {
   auto& streamRaw = _::rawSchema<StreamResult>();
-  bool isStream = raw->generic == &streamRaw || raw->generic->canCastTo == &streamRaw;
-  return isStream || isRealtimeResult();
-}
-
-bool StructSchema::isRealtimeResult() const {
-  auto& realtimeRaw = _::rawSchema<RealtimeResult>();
-  return raw->generic == &realtimeRaw || raw->generic->canCastTo == &realtimeRaw;
+  return raw->generic == &streamRaw || raw->generic->canCastTo == &streamRaw;
 }
 
 Type StructSchema::Field::getType() const {

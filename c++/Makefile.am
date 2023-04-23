@@ -88,7 +88,6 @@ public_capnpc_inputs =                                         \
   src/capnp/c++.capnp                                          \
   src/capnp/schema.capnp                                       \
   src/capnp/stream.capnp                                       \
-  src/capnp/realtime.capnp                                     \
   src/capnp/rpc.capnp                                          \
   src/capnp/rpc-twoparty.capnp                                 \
   src/capnp/persistent.capnp
@@ -106,8 +105,6 @@ capnpc_outputs =                                               \
   src/capnp/schema.capnp.h                                     \
   src/capnp/stream.capnp.c++                                   \
   src/capnp/stream.capnp.h                                     \
-  src/capnp/realtime.capnp.c++                                 \
-  src/capnp/realtime.capnp.h                                   \
   src/capnp/rpc.capnp.c++                                      \
   src/capnp/rpc.capnp.h                                        \
   src/capnp/rpc-twoparty.capnp.c++                             \
@@ -212,7 +209,6 @@ includecapnp_HEADERS =                                         \
   src/capnp/membrane.h                                         \
   src/capnp/schema.capnp.h                                     \
   src/capnp/stream.capnp.h                                     \
-  src/capnp/realtime.capnp.h                                   \
   src/capnp/schema-lite.h                                      \
   src/capnp/schema.h                                           \
   src/capnp/schema-loader.h                                    \
@@ -358,7 +354,6 @@ libcapnp_la_SOURCES=                                           \
   src/capnp/message.c++                                        \
   src/capnp/schema.capnp.c++                                   \
   src/capnp/stream.capnp.c++                                   \
-  src/capnp/realtime.capnp.c++                                 \
   src/capnp/serialize.c++                                      \
   src/capnp/serialize-packed.c++                               \
   $(heavy_sources)

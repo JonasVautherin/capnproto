@@ -400,17 +400,6 @@ TEST(SchemaLoader, LoadStreaming) {
   KJ_EXPECT(results.getShortDisplayName() == "StreamResult", results.getShortDisplayName());
 }
 
-TEST(SchemaLoader, LoadRealtime) {
-  SchemaLoader loader;
-
-  InterfaceSchema schema =
-      loader.load(Schema::from<test::TestRealtimeStreaming>().getProto()).asInterface();
-
-  auto results = schema.getMethodByName("doRealtimeStreamI").getResultType();
-  KJ_EXPECT(results.isRealtimeResult());
-  KJ_EXPECT(results.getShortDisplayName() == "RealtimeResult", results.getShortDisplayName());
-}
-
 KJ_TEST("SchemaLoader placeholders are assumed to have caps") {
   // Load TestCycle*NoCaps, but don't load its dependency TestAllTypes, so the loader has to assume
   // there may be caps.

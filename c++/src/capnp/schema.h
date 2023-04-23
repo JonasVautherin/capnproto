@@ -279,9 +279,6 @@ public:
   bool isStreamResult() const;
   // Convenience method to check if this is the result type of a streaming RPC method.
 
-  bool isRealtimeResult() const;
-  // Convenience method to check if this is the result type of a realtime RPC method.
-
   bool mayContainCapabilities() const { return raw->generic->mayContainCapabilities; }
   // Returns true if a struct of this type may transitively contain any capabilities. I.e., are
   // any of the fields an interface type, or a struct type that may in turn contain capabilities?
@@ -534,9 +531,6 @@ public:
 
   bool isStreaming() const { return getResultType().isStreamResult(); }
   // Check if this is a streaming method.
-
-  bool isRealtime() const { return getResultType().isRealtimeResult(); }
-  // Check if this is a realtime method.
 
   StructSchema getParamType() const;
   StructSchema getResultType() const;

@@ -42,7 +42,6 @@
 #include <kj/main.h>
 #include <algorithm>
 #include <capnp/stream.capnp.h>
-#include <capnp/realtime.capnp.h>
 
 #if _WIN32
 #include <windows.h>
@@ -66,6 +65,7 @@ namespace {
 static constexpr uint64_t NAMESPACE_ANNOTATION_ID = 0xb9c6f99ebf805f2cull;
 static constexpr uint64_t NAME_ANNOTATION_ID = 0xf264a779fef191ceull;
 static constexpr uint64_t ALLOW_CANCELLATION_ANNOTATION_ID = 0xac7096ff8cfc9dceull;
+static constexpr uint64_t REALTIME_ANNOTATION_ID = 0xf1e925c2b9cb4a22ull;
 
 bool hasDiscriminantValue(const schema::Field::Reader& reader) {
   return reader.getDiscriminantValue() != schema::Field::NO_DISCRIMINANT;
@@ -846,7 +846,7 @@ private:
   kj::Maybe<kj::StringTree> makeBrandDepInitializer(Schema type) {
     // Be careful not to invoke cppFullName() if it would just be thrown away, as doing so will
     // add the type's declaring file to `usedImports`. In particular, this causes `stream.capnp.h`
-    // and `realtime.capnp.h` to be #included unnecessarily.
+    // to be #included unnecessarily.
     if (type.isBranded()) {
       return makeBrandDepInitializer(type, cppFullName(type, nullptr));
     } else {
@@ -2162,7 +2162,11 @@ private:
     auto resultProto = resultSchema.getProto();
 
     bool isStreaming = method.isStreaming();
-    bool isRealtime = method.isRealtime();
+    bool isRealtime = false;
+    // TODO SPARTA: does that work?
+    if (annotationValue(proto, REALTIME_ANNOTATION_ID) != nullptr) {
+      isRealtime = true;
+    }
 
     auto implicitParamsReader = proto.getImplicitParameters();
     auto implicitParamsBuilder = kj::heapArrayBuilder<CppTypeName>(implicitParamsReader.size());
@@ -2202,7 +2206,7 @@ private:
     CppTypeName genericResultType;
     if (isStreaming) {
       // We don't use resultType or genericResultType in this case. We want to avoid computing them
-      // at all so that we don't end up marking stream.capnp.h or realtime.capnp.h in usedImports.
+      // at all so that we don't end up marking stream.capnp.h in usedImports.
     } else if (resultProto.getScopeId() == 0) {
       resultType = interfaceTypeName;
       if (implicitParams.size() == 0) {

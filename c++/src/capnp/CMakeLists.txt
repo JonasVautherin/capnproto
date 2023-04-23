@@ -11,7 +11,6 @@ set(capnp_sources_lite
   message.c++
   schema.capnp.c++
   stream.capnp.c++
-  realtime.capnp.c++
   serialize.c++
   serialize-packed.c++
 )
@@ -43,7 +42,6 @@ set(capnp_headers
   schema.h
   schema.capnp.h
   stream.capnp.h
-  realtime.capnp.h
   schema-lite.h
   schema-loader.h
   schema-parser.h
@@ -63,7 +61,6 @@ set(capnp_schemas
   c++.capnp
   schema.capnp
   stream.capnp
-  realtime.capnp
 )
 add_library(capnp ${capnp_sources})
 add_library(CapnProto::capnp ALIAS capnp)

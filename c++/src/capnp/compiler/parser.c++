@@ -883,14 +883,6 @@ CapnpParser::CapnpParser(Orphanage orphanageParam, ErrorReporter& errorReporterP
             }
             return decl;
           }),
-      p::transform(p::sequence(locatedKeyword("realtime"), keyword("stream")),
-      [this](Located<Text::Reader>&& kw) -> Orphan<Declaration::ParamList> {
-            auto decl = orphanage.newOrphan<Declaration::ParamList>();
-            auto builder = decl.get();
-            kw.copyLocationTo(builder);
-            builder.setRealtimeStream();
-            return decl;
-          }),
       p::transform(locatedKeyword("stream"),
           [this](Located<Text::Reader>&& kw) -> Orphan<Declaration::ParamList> {
             auto decl = orphanage.newOrphan<Declaration::ParamList>();

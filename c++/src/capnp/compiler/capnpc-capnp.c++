@@ -40,7 +40,6 @@
 #include <algorithm>
 #include <map>
 #include <capnp/stream.capnp.h>
-#include <capnp/realtime.capnp.h>
 
 #if HAVE_CONFIG_H
 #include "config.h"
@@ -497,8 +496,6 @@ private:
                               schema::Brand::Reader brand, InterfaceSchema::Method method) {
     if (schema.getProto().getId() == typeId<StreamResult>()) {
       return kj::strTree("stream");
-    } else if (schema.getProto().getId() == typeId<RealtimeResult>()) {
-      return kj::strTree("realtime stream");
     } else if (schema.getProto().getScopeId() == 0) {
       // A named parameter list.
       return kj::strTree("(", kj::StringTree(

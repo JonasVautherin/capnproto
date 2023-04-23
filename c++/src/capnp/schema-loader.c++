@@ -30,7 +30,6 @@
 #include <algorithm>
 #include <kj/map.h>
 #include <capnp/stream.capnp.h>
-#include <capnp/realtime.capnp.h>
 
 #if _MSC_VER && !defined(__clang__)
 #include <atomic>
@@ -1732,11 +1731,6 @@ void SchemaLoader::Impl::makeDep(_::RawBrandedSchema::Binding& result,
     // streaming ("foo @0 () -> stream;"). We like to auto-load it if we see it as someone's
     // dependency.
     schema = loadNative(&_::rawSchema<StreamResult>());
-  } else if(typeId == capnp::typeId<RealtimeResult>()) {
-    // RealtimeResult is a very special type that is used to mark when a method is declared as
-    // realtime ("foo @0 () -> realtime stream;"). We like to auto-load it if we see it as someone's
-    // dependency.
-    schema = loadNative(&_::rawSchema<RealtimeResult>());
   } else {
     schema = loadEmpty(typeId,
         kj::str("(unknown type; seen as dependency of ", scopeName, ")"),

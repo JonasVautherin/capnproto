@@ -405,10 +405,8 @@ inline constexpr uint sizeInWords() {
 namespace capnp {
 namespace schemas {
 CAPNP_DECLARE_SCHEMA(995f9a3377c0b16e);
-CAPNP_DECLARE_SCHEMA(f1e925c2b9cb4a21);
-// HACK: Forward-declare the RawSchema for StreamResult from stream.capnp, and
-// RealtimeResult from realtime.capnp. This allows capnp files which declare
-// [realtime] streaming methods to avoid including stream.capnp.h or realtime.capnp.h.
+// HACK: Forward-declare the RawSchema for StreamResult, from stream.capnp. This allows capnp
+//   files which declare streaming methods to avoid including stream.capnp.h.
 }
 }
 
