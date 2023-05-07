@@ -254,7 +254,7 @@ ArrayPtr<void* const> getStackTrace(ArrayPtr<void*> space, uint ignoreCount) {
 #endif
 }
 
-#if __GNUC__ && !_WIN32
+#if (__GNUC__ && !_WIN32) || __clang__
 // Allow dependents to override the implementation of stack symbolication by making it a weak
 // symbol. We prefer weak symbols over some sort of callback registration mechanism becasue this
 // allows an alternate symbolication library to be easily linked into tests without changing the
@@ -285,7 +285,8 @@ String stringifyStackTrace(ArrayPtr<void* const> trace) {
     IMAGEHLP_LINE64 lineInfo;
     memset(&lineInfo, 0, sizeof(lineInfo));
     lineInfo.SizeOfStruct = sizeof(lineInfo);
-    if (dbghelp.symGetLineFromAddr64(process, reinterpret_cast<DWORD64>(trace[i]), NULL, &lineInfo)) {
+    DWORD displacement;
+    if (dbghelp.symGetLineFromAddr64(process, reinterpret_cast<DWORD64>(trace[i]), &displacement, &lineInfo)) {
       lines[i] = kj::str('\n', lineInfo.FileName, ':', lineInfo.LineNumber);
     }
   }
