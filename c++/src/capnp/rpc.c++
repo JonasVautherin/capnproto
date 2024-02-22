@@ -2031,16 +2031,24 @@ private:
       connectionState->questions.nextHigh(questionId, true);
       callBuilder.setQuestionId(questionId);
       callBuilder.setIsRealtime(true);
+      kj::Promise<void> flowPromise = nullptr;
       KJ_IF_MAYBE(exception, kj::runCatchingExceptions([&]() {
-        KJ_CONTEXT("sending RPC call", callBuilder.getInterfaceId(),
-                   callBuilder.getMethodId());
-        message->sendRealtime();
+        KJ_CONTEXT("sending RPC call",
+            callBuilder.getInterfaceId(), callBuilder.getMethodId());
+        RpcFlowController* flow;
+        KJ_IF_MAYBE(f, target->flowController) {
+          flow = *f;
+        } else {
+          flow = target->flowController.emplace(
+              connectionState->connection.get<Connected>()->newStream());
+        }
+        flowPromise = flow->sendRealtime(kj::mv(message));
       })) {
         connectionState->releaseExports(exports);
         return kj::mv(*exception);
       }
 
-      return kj::READY_NOW;
+      return kj::mv(flowPromise);
     }
 
     kj::Own<QuestionRef> sendForPipelineInternal() {
@@ -3790,7 +3798,7 @@ public:
               fulfiller->fulfill();
             }
             blockedSends.clear();
-
+            hasLoggedDroppedRealtimeMessage = false;
           }
 
           KJ_IF_MAYBE(f, emptyFulfiller) {
@@ -3811,6 +3819,7 @@ public:
       KJ_CASE_ONEOF(blockedSends, Running) {
         if (isReady()) {
           return kj::READY_NOW;
+          hasLoggedDroppedRealtimeMessage = false;
         } else {
           auto paf = kj::newPromiseAndFulfiller<void>();
           blockedSends.add(kj::mv(paf.fulfiller));
@@ -3820,6 +3829,24 @@ public:
       KJ_CASE_ONEOF(exception, kj::Exception) {
         return kj::cp(exception);
       }
+    }
+    KJ_UNREACHABLE;
+  }
+
+  kj::Promise<void> sendRealtime(kj::Own<OutgoingRpcMessage> message) override {
+    KJ_SWITCH_ONEOF(state) {
+      KJ_CASE_ONEOF(ignored, Running) {
+          if (isReady()) {
+            message->sendRealtime();
+            return kj::READY_NOW;
+          } else if (!hasLoggedDroppedRealtimeMessage) {
+            KJ_DBG("Dropping realtime message(s) because of link congestion");
+            hasLoggedDroppedRealtimeMessage = true;
+          }
+        }
+        KJ_CASE_ONEOF(exception, kj::Exception) {
+          return kj::cp(exception);
+        }
     }
     KJ_UNREACHABLE;
   }
@@ -3839,6 +3866,7 @@ private:
   RpcFlowController::WindowGetter& windowGetter;
   size_t inFlight = 0;
   size_t maxMessageSize = 0;
+  bool hasLoggedDroppedRealtimeMessage = false;
 
   typedef kj::Vector<kj::Own<kj::PromiseFulfiller<void>>> Running;
   kj::OneOf<Running, kj::Exception> state;
@@ -3880,6 +3908,10 @@ public:
 
   kj::Promise<void> send(kj::Own<OutgoingRpcMessage> message, kj::Promise<void> ack) override {
     return inner.send(kj::mv(message), kj::mv(ack));
+  }
+
+  kj::Promise<void> sendRealtime(kj::Own<OutgoingRpcMessage> message) override {
+    return inner.sendRealtime(kj::mv(message));
   }
 
   kj::Promise<void> waitAllAcked() override {
