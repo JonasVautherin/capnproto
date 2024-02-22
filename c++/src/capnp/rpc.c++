@@ -1827,7 +1827,7 @@ private:
         return RequestHook::from(kj::mv(replacement))->sendStreaming();
       } else {
         if (callBuilder.getIsRealtime()) {
-          return sendRealtimeInternal(false);
+          return sendRealtimeInternal();
         } else {
           return sendStreamingInternal(false);
         }
@@ -2019,7 +2019,7 @@ private:
       return kj::mv(flowPromise);
     }
 
-    kj::Promise<void> sendRealtimeInternal(bool isTailCall) {
+    kj::Promise<void> sendRealtimeInternal() {
       // We don't use setupSend() here because we don't actually allocate a question table entry
       // for realtime messages, because we don't expect a response.
 
@@ -2034,9 +2034,6 @@ private:
       connectionState->questions.nextHigh(questionId, true);
       callBuilder.setQuestionId(questionId);
       callBuilder.setIsRealtime(true);
-      if (isTailCall) {
-        callBuilder.getSendResultsTo().setYourself();
-      }
       KJ_IF_MAYBE(exception, kj::runCatchingExceptions([&]() {
         KJ_CONTEXT("sending RPC call", callBuilder.getInterfaceId(),
                    callBuilder.getMethodId());
