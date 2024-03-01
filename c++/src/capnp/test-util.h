@@ -331,6 +331,7 @@ public:
   bool jShouldThrow = false;
 
   kj::Promise<void> doStreamI(DoStreamIContext context) override {
+    KJ_DBG("SPARTA - doStreamI");
     iSum += context.getParams().getI();
     auto paf = kj::newPromiseAndFulfiller<void>();
     fulfiller = kj::mv(paf.fulfiller);
@@ -338,6 +339,7 @@ public:
   }
 
   kj::Promise<void> doStreamJ(DoStreamJContext context) override {
+    KJ_DBG("SPARTA - doStreamJ");
     jSum += context.getParams().getJ();
 
     if (jShouldThrow) {
@@ -351,9 +353,51 @@ public:
   }
 
   kj::Promise<void> finishStream(FinishStreamContext context) override {
+    KJ_DBG("SPARTA - finishStream");
     auto results = context.getResults();
     results.setTotalI(iSum);
     results.setTotalJ(jSum);
+    return kj::READY_NOW;
+  }
+};
+
+
+class TestRealtimeStreamingImpl final: public test::TestRealtimeStreaming::Server {
+public:
+  uint streamSum = 0;
+  uint realtimeStreamSum = 0;
+  kj::Maybe<kj::Own<kj::PromiseFulfiller<void>>> fulfiller;
+  //bool jShouldThrow = false;
+
+  kj::Promise<void> doStream(DoStreamContext context) override {
+    KJ_DBG("SPARTA - doStream");
+    streamSum += context.getParams().getI();
+    auto paf = kj::newPromiseAndFulfiller<void>();
+    fulfiller = kj::mv(paf.fulfiller);
+    return kj::mv(paf.promise);
+  }
+
+  kj::Promise<void> doRealtimeStream(DoRealtimeStreamContext context) override {
+    KJ_DBG("SPARTA - doRealtimeStream");
+    realtimeStreamSum += context.getParams().getJ();
+
+   // if (jShouldThrow) {
+   //   KJ_FAIL_ASSERT("throw requested") { break; }
+   //   return kj::READY_NOW;
+   // }
+
+    return kj::READY_NOW;
+    // TODO SPARTA
+    //auto paf = kj::newPromiseAndFulfiller<void>();
+    //fulfiller = kj::mv(paf.fulfiller);
+    //return kj::mv(paf.promise);
+  }
+
+  kj::Promise<void> finishStream(FinishStreamContext context) override {
+    KJ_DBG("SPARTA - finishStream");
+    auto results = context.getResults();
+    results.setTotalI(streamSum);
+    results.setTotalJ(realtimeStreamSum);
     return kj::READY_NOW;
   }
 };

@@ -702,8 +702,10 @@ KJ_TEST("Streaming over RPC") {
 
     auto req = cap.doStreamIRequest();
     req.setI(++count);
+    KJ_DBG("SPARTA - sending request (doStreamI)");
     promise = req.send();
   }
+  KJ_DBG("SPARTA - flow control kicks in");
 
   // We should have sent... several.
   KJ_EXPECT(count > 5);
@@ -721,6 +723,8 @@ KJ_TEST("Streaming over RPC") {
 
     auto req = cap.doStreamIRequest();
     req.setI(++count);
+
+    KJ_DBG("SPARTA - sending request (doStreamI)");
     promise = req.send();
     if (promise.poll(waitScope)) {
       // We'll see a couple of instances where completing one request frees up space to make two
@@ -908,6 +912,130 @@ KJ_TEST("Streaming over RPC then unwrap with CapabilitySet") {
   // Finish it.
   KJ_ASSERT_NONNULL(server.fulfiller)->fulfill();
   promise.wait(waitScope);
+}
+
+KJ_TEST("Realtime streaming over RPC") {
+  kj::EventLoop loop;
+  kj::WaitScope waitScope(loop);
+
+  auto pipe = kj::newTwoWayPipe();
+
+  size_t window = 1024;
+  size_t clientWritten = 0;
+  size_t serverWritten = 0;
+
+  pipe.ends[0] = kj::heap<MockSndbufStream>(kj::mv(pipe.ends[0]), window, clientWritten);
+  pipe.ends[1] = kj::heap<MockSndbufStream>(kj::mv(pipe.ends[1]), window, serverWritten);
+
+  /*/ here
+  auto ownServer = kj::heap<TestRealtimeStreamingImpl>();
+  auto& server = *ownServer;
+  test::TestRealtimeStreaming::Client serverCap(kj::mv(ownServer));
+
+  TwoPartyClient tpClient(*pipe.ends[0]);
+  TwoPartyClient tpServer(*pipe.ends[1], serverCap, rpc::twoparty::Side::SERVER);
+
+  auto cap = tpClient.bootstrap().castAs<test::TestRealtimeStreaming>();
+  // to there
+   */
+
+  // Prepare/bootstrap client
+  TwoPartyVatNetwork clientNetwork(*pipe.ends[0], rpc::twoparty::Side::CLIENT);
+  auto rpcClient = makeRpcClient(clientNetwork);
+  capnp::word scratch[4];
+  memset(&scratch, 0, sizeof(scratch));
+  capnp::MallocMessageBuilder message(scratch);
+  auto vatId = message.getRoot<rpc::twoparty::VatId>();
+  vatId.setSide(rpc::twoparty::Side::SERVER);
+  auto client = rpcClient.bootstrap(vatId);
+  auto cap = client.castAs<test::TestRealtimeStreaming>();
+
+  // Prepare server
+  auto ownServer = kj::heap<TestRealtimeStreamingImpl>();
+  auto& server = *ownServer;
+  test::TestRealtimeStreaming::Client serverCap(kj::mv(ownServer));
+  TwoPartyClient tpServer(*pipe.ends[1], serverCap, rpc::twoparty::Side::SERVER);
+
+  // Send one realtime call and check that it correctly sent/received
+  //KJ_DBG("SPARTA - ", rpcClient.countQuestionsForTest());
+  /*
+    auto realtimeReq = cap.doRealtimeStreamRequest();
+    realtimeReq.setJ(42);
+    KJ_DBG("SPARTA - sending realtime request");
+    auto realtimePromise = realtimeReq.send();
+    KJ_ASSERT(realtimePromise.poll(waitScope));
+    realtimePromise.wait(waitScope);
+  */
+  //KJ_DBG("SPARTA - ", rpcClient.countQuestionsForTest());
+  //KJ_ASSERT_NONNULL(server.fulfiller)->fulfill();
+  //KJ_ASSERT(server.streamSum == 42);
+
+  // TODO send a couple requests and check the question count on the client's RpcSystem (rpcClient)
+  // Send stream requests until we can't anymore.
+  kj::Promise<void> promise = kj::READY_NOW;
+  uint count = 0;
+  while (promise.poll(waitScope)) {
+    //KJ_DBG("SPARTA - count", count, rpcClient.countQuestionsForTest());
+    promise.wait(waitScope);
+
+    auto req = cap.doStreamRequest();
+    req.setI(++count);
+    KJ_DBG("SPARTA - sending request (doStream)");
+    promise = req.send();
+    //KJ_ASSERT_NONNULL(server.fulfiller)->fulfill(); // This fails because the server hasn't received the message yet
+  }
+
+  KJ_DBG("SPARTA - flow control kicks in");
+
+  // We should have sent... several.
+  KJ_EXPECT(count > 5);
+
+  // Now, cause calls to finish server-side one-at-a-time and check that this causes the client
+  // side to be willing to send more.
+  //KJ_DBG("SPARTA - now it should decrease?");
+  //KJ_ASSERT_NONNULL(server.fulfiller)->fulfill();
+  //promise.wait(waitScope);
+  //KJ_DBG("SPARTA - count", count, rpcClient.countQuestionsForTest(), server.streamSum, server.realtimeStreamSum);
+  //KJ_DBG("SPARTA - count", count, rpcClient.countQuestionsForTest());
+  KJ_DBG("SPARTA - count", count, rpcClient.countQuestionsForTest());
+  int currentQuestionCount = rpcClient.countQuestionsForTest();
+
+  uint countReceived = 0;
+  for (uint i = 0; i < 15; i++) {
+    KJ_EXPECT(server.streamSum == ++countReceived);
+    server.streamSum = 0;
+    KJ_ASSERT_NONNULL(server.fulfiller)->fulfill();
+
+    KJ_ASSERT(promise.poll(waitScope));
+    promise.wait(waitScope);
+    KJ_DBG("SPARTA - count", count, rpcClient.countQuestionsForTest());
+
+    auto req = cap.doStreamRequest();
+    req.setI(++count);
+    KJ_DBG("SPARTA - sending request (doStream)");
+    promise = req.send();
+    if (promise.poll(waitScope)) {
+      // We'll see a couple of instances where completing one request frees up space to make two
+      // more. This is because the first few requests we made are a little bit larger than the
+      // rest due to being pipelined on the bootstrap. Once the bootstrap resolves, the request
+      // size gets smaller.
+      promise.wait(waitScope);
+      req = cap.doStreamRequest();
+      req.setI(++count);
+      promise = req.send();
+      KJ_DBG("SPARTA - count", count, rpcClient.countQuestionsForTest());
+
+      // We definitely shouldn't have freed up stream space for more than two additional requests!
+      KJ_ASSERT(!promise.poll(waitScope));
+    }
+  }
+
+  KJ_DBG("SPARTA - sending finishStream for fun");
+  auto finishReq = cap.finishStreamRequest();
+  //auto finishPromise = finishReq.send();
+  auto result = finishReq.send().wait(waitScope);
+  KJ_DBG(result.getTotalI());
+
 }
 
 KJ_TEST("promise cap resolves between starting request and sending it") {

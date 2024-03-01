@@ -538,6 +538,14 @@ public:
     maybeUnblockFlow();
   }
 
+  int countQuestionsForTest() {
+    int count = 0;
+    questions.forEach([&](QuestionId id, Question& question) {
+      count++;
+    });
+    return count;
+  }
+
 private:
   class RpcClient;
   class ImportClient;
@@ -2024,6 +2032,7 @@ private:
     }
 
     kj::Promise<void> sendRealtimeInternal() {
+      KJ_DBG("SPARTA - sendRealtimeInternal");
       // We don't use setupSend() here because we don't actually allocate a question table entry
       // for realtime messages, because we don't expect a response.
 
@@ -3687,6 +3696,14 @@ public:
     traceEncoder = kj::mv(func);
   }
 
+  int countQuestionsForTest() {
+    int count = 0;
+    for (auto& connectionPair : connections) {
+      count += connectionPair.second->countQuestionsForTest();
+    }
+    return count;
+  }
+
   kj::Promise<void> run() { return kj::mv(acceptLoopPromise); }
 
 private:
@@ -3778,6 +3795,10 @@ void RpcSystemBase::baseSetFlowLimit(size_t words) {
 
 void RpcSystemBase::setTraceEncoder(kj::Function<kj::String(const kj::Exception&)> func) {
   impl->setTraceEncoder(kj::mv(func));
+}
+
+int RpcSystemBase::countQuestionsForTest() {
+  return impl->countQuestionsForTest();
 }
 
 kj::Promise<void> RpcSystemBase::run() {
