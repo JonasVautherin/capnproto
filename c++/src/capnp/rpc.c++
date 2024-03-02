@@ -1761,6 +1761,13 @@ private:
     }
 
     RemotePromise<AnyPointer> send() override {
+      //if (callBuilder.getIsRealtime()) {
+      //  // In a situation involving a call being proxied over another connection, it could
+      //  // happen that send() is called for a realtime stream. In that case, redirect to
+      //  // sendStreaming() directly.
+      //  return RemotePromise<AnyPointer>(sendStreaming(), getDisabledPipeline());
+      //}
+
       if (!connectionState->connection.is<Connected>()) {
         // Connection is broken.
         // TODO(bug): Seems like we should check for redirect before this?
