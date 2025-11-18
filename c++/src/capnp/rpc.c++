@@ -1769,17 +1769,19 @@ private:
 
     RemotePromise<AnyPointer> send() override {
       if (callBuilder.getIsRealtime()) {
-        // In a situation involving a call being proxied over another connection, it could
-        // happen that send() is called for a realtime stream. In that case, redirect to
-        // sendStreaming().
-        auto streamPromise = sendStreaming().then([]() {
-          auto response = kj::Own<RpcResponse>();
-          auto reader = response->getResults();
-          return Response<AnyPointer>(reader, kj::mv(response));
-        });
+        // For proxied realtime calls, we need to use the streaming path to avoid
+        // questionId leaks, but return an immediate dummy response.
+
+        // Send the real call via the realtime path in the background
+        connectionState->tasks.add(sendRealtimeInternal().then([]() {}, [](kj::Exception&& e) {
+          KJ_LOG(ERROR, "Realtime call failed", e);
+        }));
+
+        auto dummyResponse = kj::refcounted<LocallyRedirectedRpcResponse>(MessageSize{0, 0});
+        auto reader = dummyResponse->getResults();
 
         return RemotePromise<AnyPointer>(
-            kj::mv(streamPromise),
+            kj::Promise<Response<AnyPointer>>(Response<AnyPointer>(reader, kj::mv(dummyResponse))),
             AnyPointer::Pipeline(getDisabledPipeline()));
       }
 
