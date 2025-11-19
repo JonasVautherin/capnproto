@@ -187,6 +187,7 @@ ClientHook::CallHints callHintsFromReader(rpc::Call::Reader reader) {
   ClientHook::CallHints hints;
   hints.noPromisePipelining = reader.getNoPromisePipelining();
   hints.onlyPromisePipeline = reader.getOnlyPromisePipeline();
+  hints.isRealtime = reader.getIsRealtime();
   return hints;
 }
 
@@ -257,7 +258,7 @@ public:
     }
   }
 
-  T& nextHigh(Id& id) {
+  T& nextHigh(Id& id, bool setLowBit) {
     // Choose an ID with the top bit set in round-robin fashion, but don't choose an ID that
     // is still in use.
 
@@ -266,7 +267,13 @@ public:
     bool created = false;
     T* slot;
     while (!created) {
-      id = highCounter++ | highBit<Id>();
+      id = highCounter | highBit<Id>();
+      highCounter += 2; // the high ID space is split in two, based on the low bit
+
+      if (setLowBit) {
+        id = id | 1;
+      }
+
       slot = &highSlots.findOrCreate(id, [&]() {
         created = true;
         return typename kj::HashMap<Id, T>::Entry { id, T() };
@@ -614,6 +621,14 @@ public:
     maybeUnblockFlow();
   }
 
+  int countQuestionsForTest() {
+    int count = 0;
+    questions.forEach([&](QuestionId id, Question& question) {
+      count++;
+    });
+    return count;
+  }
+
 private:
   class RpcClient;
   class ImportClient;
@@ -821,7 +836,7 @@ private:
 
   kj::TaskSet tasks;
 
-  bool gotReturnForHighQuestionId = false;
+  bool gotReturnForPipelineOnlyCall = false;
   // Becomes true if we ever get a `Return` message for a high question ID (with top bit set),
   // which we use in cases where we've hinted to the peer that we don't want a `Return`. If the
   // peer sends us one anyway then it seemingly does not implement our hints. We need to stop
@@ -1092,6 +1107,7 @@ private:
       callBuilder.setMethodId(methodId);
       callBuilder.setNoPromisePipelining(hints.noPromisePipelining);
       callBuilder.setOnlyPromisePipeline(hints.onlyPromisePipeline);
+      callBuilder.setIsRealtime(hints.isRealtime);
 
       auto root = request->getRoot();
       return Request<AnyPointer, AnyPointer>(root, kj::mv(request));
@@ -2421,6 +2437,23 @@ private:
     }
 
     RemotePromise<AnyPointer> send() override {
+      if (callBuilder.getIsRealtime()) {
+        // For proxied realtime calls, we need to use the streaming path to avoid
+        // questionId leaks, but return an immediate dummy response.
+
+        // Send the real call via the realtime path in the background
+        connectionState->tasks.add(sendRealtimeInternal().then([]() {}, [](kj::Exception&& e) {
+          KJ_LOG(ERROR, "Realtime call failed", e);
+        }));
+
+        auto dummyResponse = kj::refcounted<LocallyRedirectedRpcResponse>(MessageSize{0, 0});
+        auto reader = dummyResponse->getResults();
+
+        return RemotePromise<AnyPointer>(
+            kj::Promise<Response<AnyPointer>>(Response<AnyPointer>(reader, kj::mv(dummyResponse))),
+            AnyPointer::Pipeline(getDisabledPipeline()));
+      }
+
       if (!connectionState->connection.is<Connected>()) {
         // Connection is broken.
         // TODO(bug): Seems like we should check for redirect before this?
@@ -2486,7 +2519,11 @@ private:
         replacement.set(paramsBuilder);
         return RequestHook::from(kj::mv(replacement))->sendStreaming();
       } else {
-        return sendStreamingInternal(false);
+        if (callBuilder.getIsRealtime()) {
+          return sendRealtimeInternal();
+        } else {
+          return sendStreamingInternal();
+        }
       }
     }
 
@@ -2507,7 +2544,7 @@ private:
             callHintsFromReader(callBuilder));
         replacement.set(paramsBuilder);
         return replacement.sendForPipeline();
-      } else if (connectionState->gotReturnForHighQuestionId) {
+      } else if (connectionState->gotReturnForPipelineOnlyCall) {
         // Peer doesn't implement our hints. Fall back to a regular send().
         return send();
       } else {
@@ -2635,14 +2672,11 @@ private:
       return kj::mv(result);
     }
 
-    kj::Promise<void> sendStreamingInternal(bool isTailCall) {
-      auto setup = setupSend(isTailCall);
+    kj::Promise<void> sendStreamingInternal() {
+      auto setup = setupSend(false);
 
       // Finish and send.
       callBuilder.setQuestionId(setup.questionId);
-      if (isTailCall) {
-        callBuilder.getSendResultsTo().setYourself();
-      }
       kj::Promise<void> flowPromise = nullptr;
       KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
         KJ_CONTEXT("sending RPC call",
@@ -2667,6 +2701,44 @@ private:
       return kj::mv(flowPromise);
     }
 
+    kj::Promise<void> sendRealtimeInternal() {
+      // We don't use setupSend() here because we don't actually allocate a question table entry
+      // for realtime messages, because we don't expect a response.
+
+      // Realtime streams do not allow capabilities. We check that there are none and throw
+      // an exception otherwise.
+      if (capTable.getTable().size() != 0) {
+        kj::Exception e = KJ_EXCEPTION(FAILED, "Realtime streams do not allow capabilities!");
+        kj::throwRecoverableException(kj::mv(e));
+      }
+
+      // Finish and send.
+      QuestionId questionId;
+      auto& question = connectionState->questions.nextHigh(questionId, true);
+      // We don't keep the question for realtime messages. Let's erase it right
+      // away so that it doesn't leak.
+      connectionState->questions.erase(questionId, question);
+      callBuilder.setQuestionId(questionId);
+      callBuilder.setIsRealtime(true);
+      kj::Promise<void> flowPromise = nullptr;
+      KJ_IF_MAYBE(exception, kj::runCatchingExceptions([&]() {
+        KJ_CONTEXT("sending RPC call",
+            callBuilder.getInterfaceId(), callBuilder.getMethodId());
+        RpcFlowController* flow;
+        KJ_IF_MAYBE(f, target->flowController) {
+          flow = *f;
+        } else {
+          flow = target->flowController.emplace(
+              connectionState->connection.get<Connected>()->newStream());
+        }
+        flowPromise = flow->sendRealtime(kj::mv(message));
+      })) {
+        return kj::mv(*exception);
+      }
+
+      return kj::mv(flowPromise);
+    }
+
     kj::Own<QuestionRef> sendForPipelineInternal() {
       // Since must of setupSend() is subtly different for this case, we don't reuse it.
 
@@ -2682,7 +2754,7 @@ private:
 
       // Init the question table.  Do this after writing descriptors to avoid interference.
       QuestionId questionId;
-      auto& question = connectionState->questions.nextHigh(questionId);
+      auto& question = connectionState->questions.nextHigh(questionId, false);
       question.isAwaitingReturn = false;  // No Return needed
       question.paramExports = kj::mv(exports);
       question.isTailCall = false;
@@ -3111,10 +3183,11 @@ private:
       if (isFirstResponder()) {
         // We haven't sent a return yet, so we must have been canceled.  Send a cancellation return.
         unwindDetector.catchExceptionsIfUnwinding([&]() {
-          // Don't send anything if the connection is broken, or if the onlyPromisePipeline hint
-          // was used (in which case the caller doesn't care to receive a `Return`).
+          // Don't send anything if the connection is broken, if the onlyPromisePipeline hint
+          // was used or if it is a realtime call (in which case the caller doesn't care to
+          // receive a `Return`).
           bool shouldFreePipeline = true;
-          if (connectionState->connection.is<Connected>() && !hints.onlyPromisePipeline) {
+          if (connectionState->connection.is<Connected>() && !hints.onlyPromisePipeline && !hints.isRealtime) {
             auto message = connectionState->connection.get<Connected>().connection
                 ->newOutgoingMessage(messageSizeHint<rpc::Return>() + sizeInWords<rpc::Payload>());
             auto builder = message->getBody().initAs<rpc::Message>().initReturn();
@@ -3818,6 +3891,18 @@ private:
 
     // No more using `call` after this point, as it now belongs to the context.
 
+    if (call.getIsRealtime()) {
+      auto promiseAndPipeline = startCall(
+          call.getInterfaceId(), call.getMethodId(), kj::mv(capability), context->addRef(), hints);
+      tasks.add(promiseAndPipeline.promise
+          .attach(kj::mv(context))
+          .then([](){}, [](kj::Exception&& exception) {
+            KJ_LOG(ERROR, exception);
+          })
+      );
+      return;
+    }
+
     {
       auto& answer = KJ_ASSERT_NONNULL(answers.create(answerId),
                                        "questionId is already in use", answerId);
@@ -3945,28 +4030,47 @@ private:
       // that we already removed it and re-allocated the ID to something else. So, we should ignore
       // the `Return`. But we might want to make note to stop using these hints, to protect against
       // the (again, remote) possibility of our ID space wrapping around and leading to confusion.
-      if (ret.getReleaseParamCaps() && sentCapabilitiesInPipelineOnlyCall) {
-        // Oh no, it appears the peer wants us to release any capabilities in the params, something
-        // which only a level 0 peer would request (no version of the C++ RPC system has ever done
-        // this). And it appears we did send capabilities in at least one pipeline-only call
-        // previously. But we have no record of which capabilities were sent in *this* call, so
-        // we cannot release them. Log an error about the leak.
-        //
-        // This scenario is unlikely to happen in practice, because sendForPipeline() is not useful
-        // when talking to a peer that doesn't support capability-passing -- they couldn't possibly
-        // return a capability to pipeline on! So, I'm not going to spend time to find a solution
-        // for this corner case. We will log an error, though, just in case someone hits this
-        // somehow.
-        KJ_LOG(ERROR,
-            "sendForPipeline() was used when sending an RPC to a peer, the parameters of that "
-            "RPC included capabilities, but the peer seems to implement Cap'n Proto at level 0, "
-            "meaning it does not support capability passing (or, at least, it sent a `Return` "
-            "with `releaseParamCaps = true`). The capabilities that were sent may have been "
-            "leaked (they won't be dropped until the connection closes).");
+      if (questionId & 1) {
+        // The low bit of the questionId is set, meaning that it is a realtime message.
+        if (!ret.getNoFinishNeeded()) {
+          // It is likely that the `noFinishNeeded` flag is set (it is common for return messages
+          // that do not contain any capabilities, which is the case for realtime streams). But if
+          // the flag is not set, we must send a Finish message.
+          KJ_IF_MAYBE(e, kj::runCatchingExceptions([&]() {
+            auto message = connection.get<Connected>()->newOutgoingMessage(
+                messageSizeHint<rpc::Finish>());
+            auto builder = message->getBody().getAs<rpc::Message>().initFinish();
+            builder.setQuestionId(questionId);
+            message->send();
+          })) {
+            disconnect(kj::mv(*e));
+          }
+        }
+      } else {
+        // The low bit of the questionId is NOT set, meaning that it is a pipeline-only message.
+        if (ret.getReleaseParamCaps() && sentCapabilitiesInPipelineOnlyCall) {
+          // Oh no, it appears the peer wants us to release any capabilities in the params, something
+          // which only a level 0 peer would request (no version of the C++ RPC system has ever done
+          // this). And it appears we did send capabilities in at least one pipeline-only call
+          // previously. But we have no record of which capabilities were sent in *this* call, so
+          // we cannot release them. Log an error about the leak.
+          //
+          // This scenario is unlikely to happen in practice, because sendForPipeline() is not useful
+          // when talking to a peer that doesn't support capability-passing -- they couldn't possibly
+          // return a capability to pipeline on! So, I'm not going to spend time to find a solution
+          // for this corner case. We will log an error, though, just in case someone hits this
+          // somehow.
+          KJ_LOG(ERROR,
+                 "sendForPipeline() was used when sending an RPC to a peer, the parameters of that "
+                 "RPC included capabilities, but the peer seems to implement Cap'n Proto at level 0, "
+                 "meaning it does not support capability passing (or, at least, it sent a `Return` "
+                 "with `releaseParamCaps = true`). The capabilities that were sent may have been "
+                 "leaked (they won't be dropped until the connection closes).");
 
-        sentCapabilitiesInPipelineOnlyCall = false;  // don't log again
+          sentCapabilitiesInPipelineOnlyCall = false;  // don't log again
+        }
+        gotReturnForPipelineOnlyCall = true;
       }
-      gotReturnForHighQuestionId = true;
       return;
     }
 
@@ -4617,6 +4721,14 @@ public:
     traceEncoder = kj::mv(func);
   }
 
+  int countQuestionsForTest() {
+    int count = 0;
+    for (auto& connectionPair : connections) {
+      count += connectionPair.second->countQuestionsForTest();
+    }
+    return count;
+  }
+
   kj::Promise<void> run() { return kj::mv(acceptLoopPromise); }
 
   void dropConnection(VatNetworkBase::Connection& connection, kj::Promise<void> shutdownTask) {
@@ -4694,6 +4806,10 @@ void RpcSystemBase::baseSetFlowLimit(size_t words) {
 
 void RpcSystemBase::setTraceEncoder(kj::Function<kj::String(const kj::Exception&)> func) {
   impl->setTraceEncoder(kj::mv(func));
+}
+
+int RpcSystemBase::countQuestionsForTest() {
+  return impl->countQuestionsForTest();
 }
 
 kj::Promise<void> RpcSystemBase::run() {
@@ -4775,6 +4891,25 @@ public:
     KJ_UNREACHABLE;
   }
 
+  kj::Promise<void> sendRealtime(kj::Own<OutgoingRpcMessage> message) override {
+    KJ_SWITCH_ONEOF(state) {
+      KJ_CASE_ONEOF(blockedSends, Running) {
+          if (isReady()) {
+            message->sendRealtime();
+            return kj::READY_NOW;
+          } else {
+            auto paf = kj::newPromiseAndFulfiller<void>();
+            blockedSends.add(kj::mv(paf.fulfiller));
+            return kj::mv(paf.promise);
+          }
+        }
+        KJ_CASE_ONEOF(exception, kj::Exception) {
+          return kj::cp(exception);
+        }
+    }
+    KJ_UNREACHABLE;
+  }
+
   kj::Promise<void> waitAllAcked() override {
     KJ_IF_SOME(q, state.tryGet<Running>()) {
       if (!q.empty()) {
@@ -4831,6 +4966,10 @@ public:
 
   kj::Promise<void> send(kj::Own<OutgoingRpcMessage> message, kj::Promise<void> ack) override {
     return inner.send(kj::mv(message), kj::mv(ack));
+  }
+
+  kj::Promise<void> sendRealtime(kj::Own<OutgoingRpcMessage> message) override {
+    return inner.sendRealtime(kj::mv(message));
   }
 
   kj::Promise<void> waitAllAcked() override {
