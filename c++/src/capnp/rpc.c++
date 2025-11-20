@@ -319,6 +319,10 @@ public:
     return presenceBits == 0 && high.size() == 0;
   }
 
+  bool isHigh(Id& id) {
+    return (id & highBit<Id>()) != 0;
+  }
+
   T& findOrCreate(Id id) {
     // Get an entry, creating it if it doesn't exist.
     if (id < kj::size(low)) {
@@ -1058,7 +1062,7 @@ private:
 
       // Send `Provide` message to our connection.
       QuestionId questionId;
-      auto& question = connectionState->questions.nextHigh(questionId);
+      auto& question = connectionState->questions.nextHigh(questionId, false);
       question.isAwaitingReturn = false;  // No Return needed
       auto questionRef = kj::refcounted<QuestionRef>(*connectionState, questionId, kj::none);
       question.selfRef = *questionRef;
@@ -2721,19 +2725,19 @@ private:
       callBuilder.setQuestionId(questionId);
       callBuilder.setIsRealtime(true);
       kj::Promise<void> flowPromise = nullptr;
-      KJ_IF_MAYBE(exception, kj::runCatchingExceptions([&]() {
+      KJ_IF_SOME(exception, kj::runCatchingExceptions([&]() {
         KJ_CONTEXT("sending RPC call",
             callBuilder.getInterfaceId(), callBuilder.getMethodId());
         RpcFlowController* flow;
-        KJ_IF_MAYBE(f, target->flowController) {
-          flow = *f;
+        KJ_IF_SOME(f, target->flowController) {
+          flow = f;
         } else {
           flow = target->flowController.emplace(
-              connectionState->connection.get<Connected>()->newStream());
+              connectionState->connection.get<Connected>().connection->newStream());
         }
         flowPromise = flow->sendRealtime(kj::mv(message));
       })) {
-        return kj::mv(*exception);
+        return kj::mv(exception);
       }
 
       return kj::mv(flowPromise);
@@ -3512,7 +3516,7 @@ private:
         // sent results if canceled, so we shouldn't have an export list to deal with.
         KJ_ASSERT(resultExports.size() == 0);
         connectionState->answers.erase(answerId);
-      } else {
+      } else if (!connectionState->answers.isHigh(answerId) || (answerId & 1) == 0) {
         // We just have to null out callContext and set the exports.
         auto& answer = KJ_ASSERT_NONNULL(connectionState->answers.find(answerId));
         answer.callContext = kj::none;
@@ -4036,14 +4040,14 @@ private:
           // It is likely that the `noFinishNeeded` flag is set (it is common for return messages
           // that do not contain any capabilities, which is the case for realtime streams). But if
           // the flag is not set, we must send a Finish message.
-          KJ_IF_MAYBE(e, kj::runCatchingExceptions([&]() {
-            auto message = connection.get<Connected>()->newOutgoingMessage(
+          KJ_IF_SOME(e, kj::runCatchingExceptions([&]() {
+            auto message = connection.get<Connected>().connection->newOutgoingMessage(
                 messageSizeHint<rpc::Finish>());
             auto builder = message->getBody().getAs<rpc::Message>().initFinish();
             builder.setQuestionId(questionId);
             message->send();
           })) {
-            disconnect(kj::mv(*e));
+            disconnect(kj::mv(e));
           }
         }
       } else {
@@ -4723,8 +4727,8 @@ public:
 
   int countQuestionsForTest() {
     int count = 0;
-    for (auto& connectionPair : connections) {
-      count += connectionPair.second->countQuestionsForTest();
+    for (auto& conn : connections) {
+      count += conn.value->countQuestionsForTest();
     }
     return count;
   }

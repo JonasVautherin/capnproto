@@ -2208,7 +2208,7 @@ private:
 
     bool isStreaming = method.isStreaming();
     bool isRealtime = false;
-    if (annotationValue(proto, REALTIME_ANNOTATION_ID) != nullptr) {
+    if (annotationValue(proto, REALTIME_ANNOTATION_ID) != kj::none) {
       isRealtime = true;
     }
 
