@@ -950,8 +950,8 @@ KJ_TEST("Realtime streaming throws instead of sending capabilities") {
     auto ignored = req.send();
   });
 
-  KJ_IF_MAYBE(e, maybeException) {
-    KJ_EXPECT(e->getType() == kj::Exception::Type::FAILED);
+  KJ_IF_SOME(e, maybeException) {
+    KJ_EXPECT(e.getType() == kj::Exception::Type::FAILED);
   } else {
     KJ_FAIL_EXPECT("should have thrown");
   }

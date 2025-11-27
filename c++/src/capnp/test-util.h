@@ -372,8 +372,8 @@ public:
   kj::Maybe<Capability::Client> cap;
 
   kj::Promise<void> getCap(GetCapContext context) override {
-    KJ_IF_MAYBE(c, cap) {
-      context.getResults().setCap(*c);
+    KJ_IF_SOME(c, cap) {
+      context.getResults().setCap(c);
     } else {
       KJ_FAIL_ASSERT("Capability has to be set first!");
     }
@@ -420,16 +420,16 @@ public:
   }
 
   void fulfillLast() {
-    KJ_IF_MAYBE(fulfiller, fulfillers.back()) {
-      (*fulfiller)->fulfill();
+    KJ_IF_SOME(fulfiller, fulfillers.back()) {
+      fulfiller->fulfill();
       fulfillers.removeLast();
     }
   }
 
   void fulfillAll() {
     for (uint i = 0; i < fulfillers.size(); i++) {
-      KJ_IF_MAYBE(fulfiller, fulfillers[i]) {
-        (*fulfiller)->fulfill();
+      KJ_IF_SOME(fulfiller, fulfillers[i]) {
+        fulfiller->fulfill();
       }
     }
     fulfillers.clear();
