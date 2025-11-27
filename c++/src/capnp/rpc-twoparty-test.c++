@@ -879,16 +879,6 @@ KJ_TEST("Streaming over RPC then unwrap with CapabilitySet") {
   promise.wait(waitScope);
 }
 
-rpc::twoparty::VatId::Builder generateServerVatId() {
-  capnp::word scratch[4];
-  memset(&scratch, 0, sizeof(scratch));
-  capnp::MallocMessageBuilder message(scratch);
-  auto vatId = message.getRoot<rpc::twoparty::VatId>();
-  vatId.setSide(rpc::twoparty::Side::SERVER);
-
-  return vatId;
-}
-
 KJ_TEST("Realtime streaming goes through") {
   kj::EventLoop loop;
   kj::WaitScope waitScope(loop);
@@ -903,7 +893,11 @@ KJ_TEST("Realtime streaming goes through") {
   auto rpcClient = makeRpcClient(clientNetwork);
 
   {
-    auto client = rpcClient.bootstrap(generateServerVatId());
+    capnp::MallocMessageBuilder vatIdMessage(8);
+    auto vatId = vatIdMessage.initRoot<rpc::twoparty::VatId>();
+    vatId.setSide(rpc::twoparty::Side::SERVER);
+
+    auto client = rpcClient.bootstrap(vatId);
     auto cap = client.castAs<test::TestRealtimeStreaming>();
 
     // Send a few realtime requests
@@ -1055,10 +1049,18 @@ KJ_TEST("Realtime streaming does not leak question IDs when proxied") {
   auto rpcClient = makeRpcClient(clientNetwork);
 
   {
-    auto internalClient = rpcInternalClient.bootstrap(generateServerVatId());
+    capnp::MallocMessageBuilder internalVatIdMessage(8);
+    auto internalVatId = internalVatIdMessage.initRoot<rpc::twoparty::VatId>();
+    internalVatId.setSide(rpc::twoparty::Side::SERVER);
+
+    auto internalClient = rpcInternalClient.bootstrap(internalVatId);
     auto internalCap = internalClient.castAs<test::TestRealtimeStreaming>();
 
-    auto client = rpcClient.bootstrap(generateServerVatId());
+    capnp::MallocMessageBuilder clientVatIdMessage(8);
+    auto clientVatId = clientVatIdMessage.initRoot<rpc::twoparty::VatId>();
+    clientVatId.setSide(rpc::twoparty::Side::SERVER);
+
+    auto client = rpcClient.bootstrap(clientVatId);
     auto cap = client.castAs<test::TestCapabilityProxy>();
 
     // Set iC into P, such that C can fetch it and start talking to S through P
