@@ -919,7 +919,7 @@ KJ_TEST("Realtime streaming goes through") {
   waitScope.poll();
 
   // Check that question IDs were not leaked
-  KJ_ASSERT(0 == rpcClient.countQuestionsForTest());
+  KJ_ASSERT(0 == rpcClient.getMetrics().questionCount);
 }
 
 KJ_TEST("Realtime streaming throws instead of sending capabilities") {
@@ -1140,8 +1140,8 @@ KJ_TEST("Realtime streaming does not leak question IDs when proxied") {
   } // All capability references go out of scope here
 
   // Check that the question IDs were not leaked
-  KJ_ASSERT(0 == rpcClient.countQuestionsForTest());
-  KJ_ASSERT(0 == rpcInternalClient.countQuestionsForTest());
+  KJ_ASSERT(0 == rpcClient.getMetrics().questionCount);
+  KJ_ASSERT(0 == rpcInternalClient.getMetrics().questionCount);
 }
 
 KJ_TEST("promise cap resolves between starting request and sending it") {

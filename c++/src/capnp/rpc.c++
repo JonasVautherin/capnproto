@@ -727,12 +727,26 @@ public:
     maybeUnblockFlow();
   }
 
-  int countQuestionsForTest() {
-    int count = 0;
+  RpcSystemBase::Metrics getMetrics() {
+    RpcSystemBase::Metrics metrics;
+
     questions.forEach([&](QuestionId id, Question& question) {
-      count++;
+      metrics.questionCount++;
     });
-    return count;
+
+    answers.forEach([&](AnswerId id, Answer& answer) {
+      metrics.answerCount++;
+    });
+
+    exports.forEach([&](ExportId id, Export& exp) {
+      metrics.exportCount++;
+    });
+
+    imports.forEach([&](ImportId id, Import& import) {
+      metrics.importCount++;
+    });
+
+    return metrics;
   }
 
 private:
@@ -5767,12 +5781,16 @@ public:
     traceEncoder = kj::mv(func);
   }
 
-  int countQuestionsForTest() {
-    int count = 0;
-    for (auto& conn : connections) {
-      count += conn.value->countQuestionsForTest();
+  Metrics getMetrics() {
+    Metrics result;
+    for (auto& conn: connections) {
+      auto connMetrics = conn.value->getMetrics();
+      result.questionCount += connMetrics.questionCount;
+      result.answerCount += connMetrics.answerCount;
+      result.exportCount += connMetrics.exportCount;
+      result.importCount += connMetrics.importCount;
     }
-    return count;
+    return result;
   }
 
   kj::Promise<void> run() { return kj::mv(acceptLoopPromise); }
@@ -5854,8 +5872,8 @@ void RpcSystemBase::setTraceEncoder(kj::Function<kj::String(const kj::Exception&
   impl->setTraceEncoder(kj::mv(func));
 }
 
-int RpcSystemBase::countQuestionsForTest() {
-  return impl->countQuestionsForTest();
+RpcSystemBase::Metrics RpcSystemBase::getMetrics() {
+  return impl->getMetrics();
 }
 
 kj::Promise<void> RpcSystemBase::run() {

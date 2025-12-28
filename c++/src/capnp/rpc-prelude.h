@@ -106,9 +106,17 @@ public:
   ~RpcSystemBase() noexcept(false);
 
   void setTraceEncoder(kj::Function<kj::String(const kj::Exception&)> func);
-  int countQuestionsForTest();
 
   kj::Promise<void> run();
+
+  struct Metrics {
+    int questionCount = 0;
+    int answerCount = 0;
+    int exportCount = 0;
+    int importCount = 0;
+  };
+
+  Metrics getMetrics();
 
 private:
   class Impl;
