@@ -200,11 +200,24 @@ class RpcSystemBrand: public kj::Refcounted {
 // =======================================================================================
 
 template <typename Id>
-static constexpr Id ONE_WAY_BIT = 1u << (sizeof(Id) * 8 - 1);
+static constexpr Id SECOND_HIGHEST_BIT = 1u << (sizeof(Id) * 8 - 2);
+
+enum QuestionIdType {
+  NORMAL = 0,
+  REVERSE_ALLOCATED = 1,
+  PIPELINE_ONLY = 2,
+  REALTIME = 3
+};
+
 template <typename Id>
-static constexpr Id REVERSE_ALLOCATED_BIT = 1u << (sizeof(Id) * 8 - 2);
+QuestionIdType getQuestionIdType(Id id) {
+  return static_cast<QuestionIdType>((id >> (sizeof(Id) * 8 - 2)) & 0x3);
+}
+
 template <typename Id>
-static constexpr Id ALL_HIGH_BITS = ONE_WAY_BIT<Id> | REVERSE_ALLOCATED_BIT<Id>;
+constexpr Id setQuestionIdType(Id counter, QuestionIdType type) {
+  return counter | (static_cast<Id>(type) << (sizeof(Id) * 8 - 2));
+}
 
 template <typename Id, typename T>
 class ExportTable {
@@ -223,7 +236,7 @@ public:
     // then be ignored. To avoid confusion with such peers, one-way IDs are allocated round-robin
     // to minimize reuse, unlike regular IDs which always use the lowest-numbered available ID.
 
-    return (id & ONE_WAY_BIT<Id>) != 0;
+    return getQuestionIdType(id) == PIPELINE_ONLY;
   }
 
   bool isReverseAllocated(Id id) {
@@ -231,18 +244,15 @@ public:
     // instead of the "export" side. This is used for ThirdPartyAnswer in particular, where the
     // sender needs to inject an entry into the recipient's question table.
 
-    return (id & REVERSE_ALLOCATED_BIT<Id>) != 0;
+    return getQuestionIdType(id) == REVERSE_ALLOCATED;
   }
 
   bool isRealtime(Id id) {
-    // Returns whether this ID represents a realtime message.
-    // Realtime messages have BOTH the One-Way bit and the Reverse-Allocated bit set.
-
-    return (id & ALL_HIGH_BITS<Id>) == ALL_HIGH_BITS<Id>;
+    return getQuestionIdType(id) == REALTIME;
   }
 
   kj::Maybe<T&> find(Id id) {
-    if (isHigh(id)) {
+    if (getQuestionIdType(id) != NORMAL) {
       return highSlots.find(id);
     } else if (id < slots.size() && slots[id] != nullptr) {
       return slots[id];
@@ -258,7 +268,7 @@ public:
     // that the caller has already done a find() to check that this entry exists.  We can't check
     // ourselves because the caller may have nullified the entry in the meantime.
 
-    if (isHigh(id)) {
+    if (getQuestionIdType(id) != NORMAL) {
       auto& slot = KJ_REQUIRE_NONNULL(highSlots.findEntry(id));
       return highSlots.release(slot).value;
     } else {
@@ -273,7 +283,7 @@ public:
   T& next(Id& id) {
     if (freeIds.empty()) {
       id = slots.size();
-      KJ_ASSERT(!isHigh(id), "2^30 concurrent questions?!!?!");
+      KJ_ASSERT(getQuestionIdType(id) == NORMAL, "2^30 concurrent questions?!!?!");
       return slots.add();
     } else {
       id = freeIds.top();
@@ -282,20 +292,16 @@ public:
     }
   }
 
-  T& nextOneWay(Id& id, bool realtime) {
+  T& nextOneWay(Id& id) {
     // Choose an ID with the top bit(s) set in round-robin fashion, but don't choose an ID that
     // is still in use.
 
     uint startCounter = oneWayCounter;
     for (;;) {
-      id = oneWayCounter++ | ONE_WAY_BIT<Id>;
-      if (oneWayCounter == ONE_WAY_BIT<Id>) {
+      id = setQuestionIdType(oneWayCounter++, PIPELINE_ONLY);
+      if (oneWayCounter == SECOND_HIGHEST_BIT<Id>) {
         // Wrap around.
         oneWayCounter = 0;
-      }
-
-      if (realtime) {
-        id |= REVERSE_ALLOCATED_BIT<Id>;
       }
 
       bool created = false;
@@ -309,6 +315,15 @@ public:
       }
 
       KJ_ASSERT(oneWayCounter != startCounter, "All one-way slots used up?");
+    }
+  }
+
+  void nextRealtime(Id& id) {
+    // Allocate a realtime ID (top two bits set) without adding to the table.
+    id = setQuestionIdType(realtimeCounter++, REALTIME);
+    if (realtimeCounter == SECOND_HIGHEST_BIT<Id>) {
+      // Wrap around.
+      realtimeCounter = 0;
     }
   }
 
@@ -345,11 +360,7 @@ private:
 
   kj::HashMap<Id, T> highSlots;
   Id oneWayCounter = 0;
-
-  bool isHigh(Id id) {
-    // Does this ID belong in `highSlots`?
-    return id & ALL_HIGH_BITS<Id>;
-  }
+  Id realtimeCounter = 0;
 };
 
 template <typename Id, typename T>
@@ -359,11 +370,6 @@ class ImportTable {
 public:
   bool empty() {
     return presenceBits == 0 && high.size() == 0;
-  }
-
-  bool isHigh(Id& id) {
-    // Does this ID belong in `highSlots`?
-    return id & ALL_HIGH_BITS<Id>;
   }
 
   T& findOrCreate(Id id) {
@@ -438,8 +444,8 @@ public:
 
     uint startCounter = reverseAllocatedCounter;
     for (;;) {
-      id = (REVERSE_ALLOCATED_BIT<Id> - ++reverseAllocatedCounter) | REVERSE_ALLOCATED_BIT<Id>;
-      if (reverseAllocatedCounter == REVERSE_ALLOCATED_BIT<Id>) {
+      id = setQuestionIdType(SECOND_HIGHEST_BIT<Id> - ++reverseAllocatedCounter, REVERSE_ALLOCATED);
+      if (reverseAllocatedCounter == SECOND_HIGHEST_BIT<Id>) {
         // Wrap around.
         reverseAllocatedCounter = 0;
       }
@@ -1174,7 +1180,7 @@ private:
 
       // Send `Provide` message to our connection.
       QuestionId questionId;
-      auto& question = connectionState->questions.nextOneWay(questionId, false);
+      auto& question = connectionState->questions.nextOneWay(questionId);
       question.isAwaitingReturn = false;  // No Return needed
       auto questionRef = kj::refcounted<QuestionRef>(*connectionState, questionId);
       question.selfRef = *questionRef;
@@ -3095,10 +3101,7 @@ private:
 
       // Finish and send.
       QuestionId questionId;
-      auto& question = connectionState->questions.nextOneWay(questionId, true);
-      // We don't keep the question for realtime messages. Let's erase it right
-      // away so that it doesn't leak.
-      connectionState->questions.erase(questionId, question);
+      connectionState->questions.nextRealtime(questionId);
       callBuilder.setQuestionId(questionId);
       callBuilder.setIsRealtime(true);
       kj::Promise<void> flowPromise = nullptr;
@@ -3135,7 +3138,7 @@ private:
 
       // Init the question table.  Do this after writing descriptors to avoid interference.
       QuestionId questionId;
-      auto& question = connectionState->questions.nextOneWay(questionId, false);
+      auto& question = connectionState->questions.nextOneWay(questionId);
       question.isAwaitingReturn = false;  // No Return needed
       question.paramExports = kj::mv(exports);
       question.isTailCall = false;
@@ -4337,8 +4340,7 @@ private:
         // sent results if canceled, so we shouldn't have an export list to deal with.
         KJ_ASSERT(resultExports.size() == 0);
         connectionState->answers.erase(answerId);
-      } else if (!connectionState->answers.isHigh(answerId) ||
-                 (answerId & ALL_HIGH_BITS<AnswerId>) != ALL_HIGH_BITS<AnswerId>) {
+      } else if (!hints.isRealtime) {
         // We just have to null out callContext and set the exports.
         auto& answer = KJ_ASSERT_NONNULL(connectionState->answers.find(answerId));
         answer.callContext = kj::none;
