@@ -5937,14 +5937,8 @@ public:
   kj::Promise<void> sendRealtime(kj::Own<OutgoingRpcMessage> message) override {
     KJ_SWITCH_ONEOF(state) {
       KJ_CASE_ONEOF(blockedSends, Running) {
-        if (isReady()) {
-          message->sendRealtime();
-          return kj::READY_NOW;
-        } else {
-          auto paf = kj::newPromiseAndFulfiller<void>();
-          blockedSends.add(kj::mv(paf.fulfiller));
-          return kj::mv(paf.promise);
-        }
+        message->sendRealtime();
+        return kj::READY_NOW;
       }
       KJ_CASE_ONEOF(exception, kj::Exception) {
         return kj::cp(exception);

@@ -951,9 +951,9 @@ KJ_TEST("Realtime streaming throws instead of sending capabilities") {
   }
 }
 
-KJ_TEST("Realtime streaming is stopped by flow control") {
-  // This tests that realtime streaming is stopped by the flow controller when
-  // congestion is detected. Realtime messages are dropped in that case.
+KJ_TEST("Realtime streaming bypasses streaming flow control") {
+  // This tests that realtime streaming is NOT blocked by streaming call backpressure.
+  // Realtime messages should go through even when streaming calls are backed up.
 
   kj::EventLoop loop;
   kj::WaitScope waitScope(loop);
@@ -987,32 +987,80 @@ KJ_TEST("Realtime streaming is stopped by flow control") {
     promise = req.send();
   }
 
-  // Send a realtime request and check that its promise hangs
+  // Streaming is now blocked. Send a realtime request - it should NOT be blocked.
   auto req = cap.doRealtimeStreamRequest();
   req.setJ(100);
-  kj::Promise<void> realtimePromise = req.send();
-  KJ_ASSERT(!realtimePromise.poll(waitScope));
-
-  // Cause the last stream to finish on the server side, unlocking the flow
-  server.fulfillLast();
+  auto realtimePromise = req.send();
+  KJ_EXPECT(realtimePromise.poll(waitScope), "Realtime message should bypass streaming backpressure");
   realtimePromise.wait(waitScope);
 
-  // Check that a realtime request now goes through
+  // Send another realtime request to confirm
   req = cap.doRealtimeStreamRequest();
   req.setJ(3);
   realtimePromise = req.send();
-  KJ_ASSERT(realtimePromise.poll(waitScope));
+  KJ_EXPECT(realtimePromise.poll(waitScope), "Realtime message should bypass streaming backpressure");
+  realtimePromise.wait(waitScope);
 
-  // Fulfill the remaining requests
+  // Fulfill the remaining streaming requests
   server.setAutoFulfill(true);
 
-  // Send finishStream request
+  // Finish and verify both realtime messages got through
   auto finishReq = cap.finishStreamRequest();
   auto result = finishReq.send().wait(waitScope);
 
-  // Make sure that only the second realtime stream was sent (the first one
-  // should be dropped because of the congestion)
-  KJ_ASSERT(result.getTotalJ() == 3);
+  // Both realtime messages should have been delivered despite streaming backpressure
+  KJ_EXPECT(result.getTotalJ() == 103);
+}
+
+KJ_TEST("Realtime streaming drops messages when network queue is full") {
+  kj::EventLoop loop;
+  kj::WaitScope waitScope(loop);
+
+  auto pipe = kj::newTwoWayPipe();
+
+  size_t window = 512;  // Small window
+  size_t clientWritten = 0;
+  size_t serverWritten = 0;
+
+  pipe.ends[0] = kj::heap<MockSndbufStream>(kj::mv(pipe.ends[0]), window, clientWritten);
+  pipe.ends[1] = kj::heap<MockSndbufStream>(kj::mv(pipe.ends[1]), window, serverWritten);
+
+  TwoPartyVatNetwork clientNetwork(*pipe.ends[0], rpc::twoparty::Side::CLIENT);
+
+  auto ownServer = kj::heap<TestRealtimeStreamingImpl>();
+  auto& server = *ownServer;
+  test::TestRealtimeStreaming::Client serverCap(kj::mv(ownServer));
+  TwoPartyClient tpServer(*pipe.ends[1], serverCap, rpc::twoparty::Side::SERVER);
+
+  auto rpcClient = makeRpcClient(clientNetwork);
+
+  capnp::MallocMessageBuilder vatIdMessage(8);
+  auto vatId = vatIdMessage.initRoot<rpc::twoparty::VatId>();
+  vatId.setSide(rpc::twoparty::Side::SERVER);
+  auto cap = rpcClient.bootstrap(vatId).castAs<test::TestRealtimeStreaming>();
+
+  uint64_t totalBeforeDrop = 0;
+
+  // Send messages until the network queue fills up
+  while (clientNetwork.getCurrentQueueSize() <= window) {
+    auto req = cap.doRealtimeStreamRequest();
+    req.setJ(1);
+    totalBeforeDrop += 1;
+    auto promise = req.send();
+  }
+
+  // Now queue is full, send a realtime message (it should be dropped).
+  {
+    auto req = cap.doRealtimeStreamRequest();
+    req.setJ(1000);
+    auto promise = req.send();
+  }
+
+  // Drain and finish
+  server.setAutoFulfill(true);
+  auto result = cap.finishStreamRequest().send().wait(waitScope);
+
+  KJ_EXPECT(result.getTotalJ() == totalBeforeDrop, result.getTotalJ(), totalBeforeDrop);
 }
 
 KJ_TEST("Realtime streaming does not leak question IDs when proxied") {

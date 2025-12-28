@@ -208,8 +208,12 @@ public:
   }
 
   void sendRealtime() override {
-    // This implementation does exactly the same as `send`, but we could imagine
-    // a VatNetwork implementation treating realtime messages differently.
+    if (network.currentQueueSize > network.getWindow()) {
+      // Queue is over the flow control window; drop this realtime message.
+      return;
+    }
+
+    // Otherwise send normally.
     send();
   }
 

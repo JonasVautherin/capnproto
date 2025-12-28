@@ -272,10 +272,10 @@ public:
   // Like calling message->sendRealtime(), but the promise resolves when it's a good time to send
   // the next message.
   //
-  // In case of a detected congestion that will prevent the message from being delivered
-  // immediately, the message is silently discarded. Note that the congestion detection is based
-  // on the acknowledgement of non-realtime messages (because realtime messages are not
-  // acknowledged) and therefore it may not always be detected depending on the situation.
+  // In case of detected network congestion, the message is silently discarded. Congestion is
+  // detected at the VatNetwork layer based on the size of the outgoing message queue. Note that
+  // realtime messages are independent of streaming call backpressure; they will not be blocked
+  // by slow application processing of streaming calls.
   //
   // Dropping the returned promise does not cancel the send. Once sendRealtime() is called,
   // there's no way to stop it.
