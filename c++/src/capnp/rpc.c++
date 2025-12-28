@@ -4739,7 +4739,8 @@ private:
       tasks.add(promiseAndPipeline.promise
           .attach(kj::mv(context))
           .then([](){}, [](kj::Exception&& exception) {
-            KJ_LOG(ERROR, exception);
+            // Realtime calls are fire-and-forget, errors have nowhere to be reported.
+            // We silently discard exceptions since the caller doesn't expect a response.
           })
       );
       return;
