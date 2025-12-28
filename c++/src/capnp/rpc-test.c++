@@ -411,6 +411,10 @@ public:
         }));
       }
 
+      void sendRealtime() override {
+        send();
+      }
+
       size_t sizeInWords() override {
         return message.sizeInWords();
       }

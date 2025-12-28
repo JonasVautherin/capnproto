@@ -109,6 +109,15 @@ public:
 
   kj::Promise<void> run();
 
+  struct Metrics {
+    int questionCount = 0;
+    int answerCount = 0;
+    int exportCount = 0;
+    int importCount = 0;
+  };
+
+  Metrics getMetrics();
+
 private:
   class Impl;
   kj::Own<Impl> impl;

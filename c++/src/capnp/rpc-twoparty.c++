@@ -207,6 +207,16 @@ public:
     }).eagerlyEvaluate(nullptr);
   }
 
+  void sendRealtime() override {
+    if (network.currentQueueSize > network.getWindow()) {
+      // Queue is over the flow control window; drop this realtime message.
+      return;
+    }
+
+    // Otherwise send normally.
+    send();
+  }
+
   size_t sizeInWords() override {
     return message.sizeInWords();
   }
