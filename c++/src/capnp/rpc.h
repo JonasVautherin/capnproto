@@ -202,7 +202,7 @@ public:
   // Send the message, or at least put it in a queue to be sent later.  Note that the builder
   // returned by `getBody()` remains valid at least until the `OutgoingRpcMessage` is destroyed.
 
-  virtual void sendRealtime() = 0;
+  virtual void sendRealtime() { send(); }
   // Send as a 'realtime' message, meaning that the network should silently discard the message if
   // congestion will prevent it from being delivered immediately.
 
