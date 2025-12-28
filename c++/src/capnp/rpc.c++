@@ -4733,7 +4733,7 @@ private:
 
     // No more using `call` after this point, as it now belongs to the context.
 
-    if (call.getIsRealtime()) {
+    if (hints.isRealtime) {
       auto promiseAndPipeline = startCall(
           call.getInterfaceId(), call.getMethodId(), kj::mv(capability), context->addRef(), hints);
       tasks.add(promiseAndPipeline.promise
