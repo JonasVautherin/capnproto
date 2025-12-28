@@ -2841,23 +2841,6 @@ private:
     }
 
     RemotePromise<AnyPointer> send() override {
-      if (callBuilder.getIsRealtime()) {
-        // For proxied realtime calls, we need to use the streaming path to avoid
-        // questionId leaks, but return an immediate dummy response.
-
-        // Send the real call via the realtime path in the background
-        connectionState->tasks.add(sendRealtimeInternal().then([]() {}, [](kj::Exception&& e) {
-          KJ_LOG(ERROR, "Realtime call failed", e);
-        }));
-
-        auto dummyResponse = kj::refcounted<LocallyRedirectedRpcResponse>(MessageSize{0, 0});
-        auto reader = dummyResponse->getResults();
-
-        return RemotePromise<AnyPointer>(
-            kj::Promise<Response<AnyPointer>>(Response<AnyPointer>(reader, kj::mv(dummyResponse))),
-            AnyPointer::Pipeline(getDisabledPipeline()));
-      }
-
       if (!connectionState->connection.is<Connected>()) {
         // Connection is broken.
         // TODO(bug): Seems like we should check for redirect before this?
@@ -3907,6 +3890,14 @@ private:
     ClientHook::VoidPromiseAndPipeline directTailCall(kj::Own<RequestHook>&& request) override {
       KJ_REQUIRE(response == kj::none,
                  "Can't call tailCall() after initializing the results struct.");
+
+      if (hints.isRealtime) {
+          // Realtime calls must use streaming path
+          return {
+            request->sendStreaming(),
+            getDisabledPipeline()
+          };
+      }
 
       KJ_IF_SOME(rpcRequest, connectionState->unwrapIfSameNetwork(*request)) {
         // Tail-calling to an RPC request on the same network. We can shorten the return path!
